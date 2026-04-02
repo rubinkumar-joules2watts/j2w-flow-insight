@@ -63,3 +63,16 @@ export const useAssignments = () =>
     if (error) throw error;
     return data as ProjectAssignment[];
   }});
+
+export type AuditEntry = {
+  id: string; table_name: string; record_id: string | null; action: string;
+  changed_by: string | null; changed_fields: unknown; old_values: unknown;
+  new_values: unknown; created_at: string | null;
+};
+
+export const useAuditLog = () =>
+  useQuery({ queryKey: ["audit_log"], queryFn: async () => {
+    const { data, error } = await supabase.from("audit_log").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data as AuditEntry[];
+  }});

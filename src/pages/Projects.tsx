@@ -2,11 +2,11 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog } from "@/hooks/useData";
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, AlertTriangle } from "lucide-react";
+import { Plus, X, Check, AlertTriangle, History } from "lucide-react";
 import { toast } from "sonner";
 
 const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
@@ -18,6 +18,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: milestones } = useMilestones();
   const { data: members } = useTeamMembers();
   const { data: assignments } = useAssignments();
+  const { data: auditLog } = useAuditLog();
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
@@ -26,6 +27,29 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const projAssignments = assignments?.filter((a) => a.project_id === selectedId) || [];
   const assignedMembers = members?.filter((m) => projAssignments.some((a) => a.team_member_id === m.id)) || [];
   const unassignedMembers = members?.filter((m) => !projAssignments.some((a) => a.team_member_id === m.id)) || [];
+
+  // Get audit entries relevant to this project
+  const milestoneIds = projMilestones.map((m) => m.id);
+  const assignmentIds = projAssignments.map((a) => a.id);
+  const projectAudit = auditLog?.filter((entry) => {
+    if (entry.table_name === "projects" && entry.record_id === selectedId) return true;
+    if (entry.table_name === "milestones" && milestoneIds.includes(entry.record_id || "")) return true;
+    if (entry.table_name === "project_assignments" && assignmentIds.includes(entry.record_id || "")) return true;
+    // Also catch assignment inserts/deletes where the record may no longer exist
+    if (entry.table_name === "project_assignments") {
+      const nv = entry.new_values as Record<string, unknown> | null;
+      const ov = entry.old_values as Record<string, unknown> | null;
+      if (nv && nv.project_id === selectedId) return true;
+      if (ov && ov.project_id === selectedId) return true;
+    }
+    if (entry.table_name === "milestones") {
+      const nv = entry.new_values as Record<string, unknown> | null;
+      const ov = entry.old_values as Record<string, unknown> | null;
+      if (nv && nv.project_id === selectedId) return true;
+      if (ov && ov.project_id === selectedId) return true;
+    }
+    return false;
+  }) || [];
 
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddMilestone, setShowAddMilestone] = useState(false);
@@ -342,6 +366,71 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     )}
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Edit History */}
+            <div className="rounded-lg border border-border bg-card">
+              <div className="border-b border-border px-4 py-3 flex items-center gap-2">
+                <History size={14} className="text-muted-foreground" />
+                <h3 className="text-sm font-bold text-foreground">Edit History</h3>
+                <span className="text-[10px] text-muted-foreground ml-auto">{projectAudit.length} entries</span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {projectAudit.length === 0 && (
+                  <p className="px-4 py-6 text-xs text-muted-foreground text-center">No changes recorded yet</p>
+                )}
+                {projectAudit.map((entry) => {
+                  const time = entry.created_at ? new Date(entry.created_at) : null;
+                  const changedFields = entry.changed_fields as string[] | null;
+                  const oldVals = entry.old_values as Record<string, unknown> | null;
+                  const newVals = entry.new_values as Record<string, unknown> | null;
+
+                  let description = "";
+                  const actionColor = entry.action === "INSERT" ? "text-success" : entry.action === "DELETE" ? "text-destructive" : "text-warning";
+                  const actionLabel = entry.action === "INSERT" ? "Created" : entry.action === "DELETE" ? "Deleted" : "Updated";
+
+                  if (entry.table_name === "milestones") {
+                    const msCode = (newVals?.milestone_code || oldVals?.milestone_code || "") as string;
+                    if (entry.action === "UPDATE" && changedFields?.length) {
+                      description = `Milestone ${msCode}: ${changedFields.map((f) => {
+                        const oldV = oldVals?.[f] ?? "—";
+                        const newV = newVals?.[f] ?? "—";
+                        return `${f.replace(/_/g, " ")} → ${newV}`;
+                      }).join(", ")}`;
+                    } else {
+                      description = `Milestone ${msCode}`;
+                    }
+                  } else if (entry.table_name === "project_assignments") {
+                    const memberId = (newVals?.team_member_id || oldVals?.team_member_id) as string;
+                    const member = members?.find((m) => m.id === memberId);
+                    description = `Resource: ${member?.name || "Unknown"}`;
+                  } else if (entry.table_name === "projects") {
+                    if (entry.action === "UPDATE" && changedFields?.length) {
+                      description = changedFields.map((f) => {
+                        const newV = newVals?.[f] ?? "—";
+                        return `${f.replace(/_/g, " ")} → ${newV}`;
+                      }).join(", ");
+                    } else {
+                      description = "Project details";
+                    }
+                  }
+
+                  return (
+                    <div key={entry.id} className="flex items-start gap-3 border-b border-border last:border-0 px-4 py-2.5">
+                      <div className="mt-0.5">
+                        <span className={`text-[10px] font-bold uppercase ${actionColor}`}>{actionLabel}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-foreground">{description}</p>
+                        <p className="text-[10px] text-muted-foreground">{entry.table_name.replace(/_/g, " ")}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {time ? time.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) + " " + time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </>
