@@ -13,9 +13,9 @@ const Sidebar = () => {
   const navigate = useNavigate();
 
   return (
-    <aside className="fixed left-0 top-0 z-50 flex h-screen w-14 flex-col items-center border-r border-border bg-sidebar py-3 gap-1">
+    <aside className="fixed left-0 top-0 z-50 flex h-screen w-14 flex-col items-center border-r border-sidebar-border bg-sidebar py-3 gap-1">
       <div className="mb-4 flex items-center justify-center">
-        <img src={j2wLogo} alt="J2W" className="h-9 w-9 object-contain" style={{ mixBlendMode: "normal" }} />
+        <img src={j2wLogo} alt="J2W" className="h-9 w-auto object-contain" style={{ mixBlendMode: "normal" }} />
       </div>
       {navItems.map((item) => {
         const isActive = location.pathname === item.path;
@@ -26,8 +26,8 @@ const Sidebar = () => {
             title={item.label}
             className={`group relative flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
               isActive
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                ? "bg-sidebar-primary/15 text-sidebar-primary"
+                : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             }`}
           >
             <item.icon size={20} strokeWidth={1.8} />
