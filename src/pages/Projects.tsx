@@ -368,6 +368,71 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 ))}
               </div>
             </div>
+
+            {/* Edit History */}
+            <div className="rounded-lg border border-border bg-card">
+              <div className="border-b border-border px-4 py-3 flex items-center gap-2">
+                <History size={14} className="text-muted-foreground" />
+                <h3 className="text-sm font-bold text-foreground">Edit History</h3>
+                <span className="text-[10px] text-muted-foreground ml-auto">{projectAudit.length} entries</span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto">
+                {projectAudit.length === 0 && (
+                  <p className="px-4 py-6 text-xs text-muted-foreground text-center">No changes recorded yet</p>
+                )}
+                {projectAudit.map((entry) => {
+                  const time = entry.created_at ? new Date(entry.created_at) : null;
+                  const changedFields = entry.changed_fields as string[] | null;
+                  const oldVals = entry.old_values as Record<string, unknown> | null;
+                  const newVals = entry.new_values as Record<string, unknown> | null;
+
+                  let description = "";
+                  const actionColor = entry.action === "INSERT" ? "text-success" : entry.action === "DELETE" ? "text-destructive" : "text-warning";
+                  const actionLabel = entry.action === "INSERT" ? "Created" : entry.action === "DELETE" ? "Deleted" : "Updated";
+
+                  if (entry.table_name === "milestones") {
+                    const msCode = (newVals?.milestone_code || oldVals?.milestone_code || "") as string;
+                    if (entry.action === "UPDATE" && changedFields?.length) {
+                      description = `Milestone ${msCode}: ${changedFields.map((f) => {
+                        const oldV = oldVals?.[f] ?? "—";
+                        const newV = newVals?.[f] ?? "—";
+                        return `${f.replace(/_/g, " ")} → ${newV}`;
+                      }).join(", ")}`;
+                    } else {
+                      description = `Milestone ${msCode}`;
+                    }
+                  } else if (entry.table_name === "project_assignments") {
+                    const memberId = (newVals?.team_member_id || oldVals?.team_member_id) as string;
+                    const member = members?.find((m) => m.id === memberId);
+                    description = `Resource: ${member?.name || "Unknown"}`;
+                  } else if (entry.table_name === "projects") {
+                    if (entry.action === "UPDATE" && changedFields?.length) {
+                      description = changedFields.map((f) => {
+                        const newV = newVals?.[f] ?? "—";
+                        return `${f.replace(/_/g, " ")} → ${newV}`;
+                      }).join(", ");
+                    } else {
+                      description = "Project details";
+                    }
+                  }
+
+                  return (
+                    <div key={entry.id} className="flex items-start gap-3 border-b border-border last:border-0 px-4 py-2.5">
+                      <div className="mt-0.5">
+                        <span className={`text-[10px] font-bold uppercase ${actionColor}`}>{actionLabel}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-foreground">{description}</p>
+                        <p className="text-[10px] text-muted-foreground">{entry.table_name.replace(/_/g, " ")}</p>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                        {time ? time.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) + " " + time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </>
         )}
 
