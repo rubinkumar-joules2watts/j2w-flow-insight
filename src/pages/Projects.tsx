@@ -168,16 +168,17 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
           <>
             {/* Project Header */}
             <div className="flex items-start justify-between rounded-lg border border-border bg-card p-5">
-              <div>
+              <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-bold text-foreground">{client?.name} · {project.name}</h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {[project.service_type, project.revenue_model, project.handled_by].filter(Boolean).map((c) => (
-                    <span key={c} className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">{c}</span>
-                  ))}
+                  <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
+                  <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
+                  <EditableSelect value={project.status || "Planning"} options={["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"]} onSave={(v) => updateProject("status", v, project.status)} />
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground space-x-4">
-                  {project.delivery_manager && <span>Manager: {project.delivery_manager}</span>}
-                  {project.client_spoc && <span>SPOC: {project.client_spoc}</span>}
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
+                  <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
+                  <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
                 </div>
               </div>
               <div className="flex gap-6 text-right">
