@@ -14,16 +14,313 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_log: {
+        Row: {
+          action: string
+          changed_by: string | null
+          changed_fields: Json | null
+          created_at: string | null
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+          record_id: string | null
+          table_name: string
+        }
+        Insert: {
+          action: string
+          changed_by?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          record_id?: string | null
+          table_name: string
+        }
+        Update: {
+          action?: string
+          changed_by?: string | null
+          changed_fields?: Json | null
+          created_at?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          record_id?: string | null
+          table_name?: string
+        }
+        Relationships: []
+      }
+      clients: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      milestones: {
+        Row: {
+          actual_end_eta: string | null
+          actual_start: string | null
+          blocker: boolean | null
+          blocker_owner: string | null
+          completion_pct: number | null
+          created_at: string | null
+          days_variance: number | null
+          deliverables: string | null
+          description: string | null
+          id: string
+          invoice_status: string | null
+          milestone_code: string | null
+          milestone_flag: string | null
+          planned_end: string | null
+          planned_start: string | null
+          project_id: string | null
+          remarks: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          actual_end_eta?: string | null
+          actual_start?: string | null
+          blocker?: boolean | null
+          blocker_owner?: string | null
+          completion_pct?: number | null
+          created_at?: string | null
+          days_variance?: number | null
+          deliverables?: string | null
+          description?: string | null
+          id?: string
+          invoice_status?: string | null
+          milestone_code?: string | null
+          milestone_flag?: string | null
+          planned_end?: string | null
+          planned_start?: string | null
+          project_id?: string | null
+          remarks?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          actual_end_eta?: string | null
+          actual_start?: string | null
+          blocker?: boolean | null
+          blocker_owner?: string | null
+          completion_pct?: number | null
+          created_at?: string | null
+          days_variance?: number | null
+          deliverables?: string | null
+          description?: string | null
+          id?: string
+          invoice_status?: string | null
+          milestone_code?: string | null
+          milestone_flag?: string | null
+          planned_end?: string | null
+          planned_start?: string | null
+          project_id?: string | null
+          remarks?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "milestones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_assignments: {
+        Row: {
+          allocated_hours_per_week: number | null
+          created_at: string | null
+          end_date: string | null
+          id: string
+          project_id: string | null
+          role_on_project: string | null
+          start_date: string | null
+          team_member_id: string | null
+        }
+        Insert: {
+          allocated_hours_per_week?: number | null
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          project_id?: string | null
+          role_on_project?: string | null
+          start_date?: string | null
+          team_member_id?: string | null
+        }
+        Update: {
+          allocated_hours_per_week?: number | null
+          created_at?: string | null
+          end_date?: string | null
+          id?: string
+          project_id?: string | null
+          role_on_project?: string | null
+          start_date?: string | null
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_assignments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_assignments_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          client_id: string | null
+          client_spoc: string | null
+          code: string | null
+          created_at: string | null
+          delivery_manager: string | null
+          handled_by: string | null
+          id: string
+          name: string
+          project_type: string | null
+          revenue_model: string | null
+          service_type: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          client_spoc?: string | null
+          code?: string | null
+          created_at?: string | null
+          delivery_manager?: string | null
+          handled_by?: string | null
+          id?: string
+          name: string
+          project_type?: string | null
+          revenue_model?: string | null
+          service_type?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          client_spoc?: string | null
+          code?: string | null
+          created_at?: string | null
+          delivery_manager?: string | null
+          handled_by?: string | null
+          id?: string
+          name?: string
+          project_type?: string | null
+          revenue_model?: string | null
+          service_type?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          color_hex: string | null
+          created_at: string | null
+          engagement_pct: number | null
+          id: string
+          initials: string | null
+          is_active: boolean | null
+          member_type: string | null
+          name: string
+          reports_to: string | null
+          role: string
+          updated_at: string | null
+        }
+        Insert: {
+          color_hex?: string | null
+          created_at?: string | null
+          engagement_pct?: number | null
+          id?: string
+          initials?: string | null
+          is_active?: boolean | null
+          member_type?: string | null
+          name: string
+          reports_to?: string | null
+          role: string
+          updated_at?: string | null
+        }
+        Update: {
+          color_hex?: string | null
+          created_at?: string | null
+          engagement_pct?: number | null
+          id?: string
+          initials?: string | null
+          is_active?: boolean | null
+          member_type?: string | null
+          name?: string
+          reports_to?: string | null
+          role?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "cto" | "program_manager" | "tech_lead"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +447,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["cto", "program_manager", "tech_lead"],
+    },
   },
 } as const
