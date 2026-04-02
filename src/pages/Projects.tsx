@@ -59,6 +59,16 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     showSaved(`${id}-${field}`);
   }, [qc]);
 
+  const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
+    if (!project) return;
+    const { error } = await supabase.from("projects").update({ [field]: value } as any).eq("id", project.id);
+    if (error) { toast.error("Failed to update"); return; }
+    await writeAuditLog("projects", project.id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
+    qc.invalidateQueries({ queryKey: ["projects"] });
+    toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
+    showSaved(`proj-${field}`);
+  }, [qc, project]);
+
   // Add project form
   const [newProject, setNewProject] = useState({ clientName: "", name: "", code: "", serviceType: "Outcome", revenueModel: "Milestone", deliveryManager: "", clientSpoc: "", handledBy: "", memberIds: [] as string[] });
 
