@@ -94,7 +94,7 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
         />
         <div
           className="absolute inset-0"
-          style={{ background: "linear-gradient(90deg, rgba(13,13,13,1) 0%, rgba(13,13,13,0.2) 100%)" }}
+          style={{ background: "linear-gradient(90deg, hsl(var(--background)) 0%, hsl(var(--background) / 0.2) 100%)" }}
         />
         <div className="relative z-10 flex h-full items-center px-6 gap-5">
           <img src={j2wLogo} alt="J2W" className="h-10 w-10 object-contain" />
