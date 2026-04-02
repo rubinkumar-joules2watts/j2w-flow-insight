@@ -24,7 +24,7 @@ const statusBadge = (s: string | null) => {
   return `${base} bg-muted text-muted-foreground`;
 };
 
-const Overview = () => {
+const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
   const { data: milestones } = useMilestones();
