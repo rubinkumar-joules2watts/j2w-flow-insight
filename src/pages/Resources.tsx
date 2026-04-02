@@ -56,7 +56,8 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
       const { data: a } = await supabase.from("project_assignments").insert({ project_id: pId, team_member_id: data.id }).select().single();
       if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
     }
-    qc.invalidateQueries({ queryKey: ["team_members", "project_assignments"] });
+    qc.invalidateQueries({ queryKey: ["team_members"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
     toast.success(`✓ Member added · ${new Date().toLocaleTimeString()}`);
     setShowAddMember(false);
     setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", engagementPct: 50, projectIds: [] });
