@@ -6,7 +6,7 @@ import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments,
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, AlertTriangle } from "lucide-react";
+import { Plus, X, Check, AlertTriangle, History } from "lucide-react";
 import { toast } from "sonner";
 
 const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
