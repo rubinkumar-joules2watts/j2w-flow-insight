@@ -9,7 +9,7 @@ import { Plus, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-const Resources = () => {
+const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const qc = useQueryClient();
   const { data: members } = useTeamMembers();
   const { data: projects } = useProjects();
