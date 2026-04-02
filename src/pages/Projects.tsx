@@ -450,4 +450,15 @@ const InlineEdit = ({ value, onSave, savedKey }: { value: string; onSave: (v: st
   );
 };
 
+const EditableSelect = ({ value, options, onSave }: { value: string; options: string[]; onSave: (v: string) => void }) => (
+  <select
+    value={value}
+    onChange={(e) => onSave(e.target.value)}
+    className="appearance-none rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground outline-none cursor-pointer hover:bg-muted transition-colors"
+  >
+    {options.map((o) => <option key={o} value={o}>{o}</option>)}
+  </select>
+);
+
 export default Projects;
+
