@@ -90,7 +90,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
 
   return (
     <AppLayout>
-      <Topbar title="Resource Allocation" />
+      <Topbar title="Resource Allocation" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Team Overview */}
         <div className="flex items-center justify-between mb-1">

@@ -129,7 +129,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   return (
     <AppLayout>
-      <Topbar title="Projects" />
+      <Topbar title="Projects" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Project Selector */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">

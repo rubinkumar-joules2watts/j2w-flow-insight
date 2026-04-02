@@ -84,7 +84,7 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   return (
     <AppLayout>
-      <Topbar title="Overview" />
+      <Topbar title="Overview" themeToggle={themeToggle} />
 
       {/* Hero Strip */}
       <div className="relative h-28 overflow-hidden border-b border-border">
