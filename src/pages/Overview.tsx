@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
+import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Activity, CheckCircle, AlertTriangle, AlertOctagon, FileText, Users } from "lucide-react";
 import j2wLogo from "@/assets/j2w-logo.png";
