@@ -18,6 +18,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: milestones } = useMilestones();
   const { data: members } = useTeamMembers();
   const { data: assignments } = useAssignments();
+  const { data: auditLog } = useAuditLog();
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
@@ -26,6 +27,29 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const projAssignments = assignments?.filter((a) => a.project_id === selectedId) || [];
   const assignedMembers = members?.filter((m) => projAssignments.some((a) => a.team_member_id === m.id)) || [];
   const unassignedMembers = members?.filter((m) => !projAssignments.some((a) => a.team_member_id === m.id)) || [];
+
+  // Get audit entries relevant to this project
+  const milestoneIds = projMilestones.map((m) => m.id);
+  const assignmentIds = projAssignments.map((a) => a.id);
+  const projectAudit = auditLog?.filter((entry) => {
+    if (entry.table_name === "projects" && entry.record_id === selectedId) return true;
+    if (entry.table_name === "milestones" && milestoneIds.includes(entry.record_id || "")) return true;
+    if (entry.table_name === "project_assignments" && assignmentIds.includes(entry.record_id || "")) return true;
+    // Also catch assignment inserts/deletes where the record may no longer exist
+    if (entry.table_name === "project_assignments") {
+      const nv = entry.new_values as Record<string, unknown> | null;
+      const ov = entry.old_values as Record<string, unknown> | null;
+      if (nv && nv.project_id === selectedId) return true;
+      if (ov && ov.project_id === selectedId) return true;
+    }
+    if (entry.table_name === "milestones") {
+      const nv = entry.new_values as Record<string, unknown> | null;
+      const ov = entry.old_values as Record<string, unknown> | null;
+      if (nv && nv.project_id === selectedId) return true;
+      if (ov && ov.project_id === selectedId) return true;
+    }
+    return false;
+  }) || [];
 
   const [showAddProject, setShowAddProject] = useState(false);
   const [showAddMilestone, setShowAddMilestone] = useState(false);
