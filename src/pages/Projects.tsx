@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-const Projects = () => {
+const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
