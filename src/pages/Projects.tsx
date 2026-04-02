@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog } from "@/hooks/useData";
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
