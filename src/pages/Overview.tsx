@@ -24,7 +24,7 @@ const statusBadge = (s: string | null) => {
   return `${base} bg-muted text-muted-foreground`;
 };
 
-const Overview = () => {
+const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
   const { data: milestones } = useMilestones();
@@ -84,7 +84,7 @@ const Overview = () => {
 
   return (
     <AppLayout>
-      <Topbar title="Overview" />
+      <Topbar title="Overview" themeToggle={themeToggle} />
 
       {/* Hero Strip */}
       <div className="relative h-28 overflow-hidden border-b border-border">
@@ -94,7 +94,7 @@ const Overview = () => {
         />
         <div
           className="absolute inset-0"
-          style={{ background: "linear-gradient(90deg, rgba(13,13,13,1) 0%, rgba(13,13,13,0.2) 100%)" }}
+          style={{ background: "linear-gradient(90deg, hsl(var(--background)) 0%, hsl(var(--background) / 0.2) 100%)" }}
         />
         <div className="relative z-10 flex h-full items-center px-6 gap-5">
           <img src={j2wLogo} alt="J2W" className="h-10 w-10 object-contain" />
@@ -198,10 +198,10 @@ const Overview = () => {
             <h3 className="mb-3 text-sm font-bold text-foreground">Milestone Completion by Client</h3>
             <ResponsiveContainer width="100%" height={160}>
               <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 0, right: 12 }}>
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} width={60} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={60} />
                 <Tooltip
-                  contentStyle={{ background: "hsl(160,8%,12%)", border: "1px solid hsl(160,6%,20%)", borderRadius: 8, fontSize: 11, color: "#fff" }}
+                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11, color: "hsl(var(--foreground))" }}
                   formatter={(v: number) => [`${v}%`, "Completion"]}
                 />
                 <Bar dataKey="pct" radius={[0, 4, 4, 0]}>

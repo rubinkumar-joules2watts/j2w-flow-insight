@@ -9,7 +9,7 @@ import { Plus, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-const Resources = () => {
+const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const qc = useQueryClient();
   const { data: members } = useTeamMembers();
   const { data: projects } = useProjects();
@@ -90,7 +90,7 @@ const Resources = () => {
 
   return (
     <AppLayout>
-      <Topbar title="Resource Allocation" />
+      <Topbar title="Resource Allocation" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Team Overview */}
         <div className="flex items-center justify-between mb-1">
@@ -186,9 +186,9 @@ const Resources = () => {
           <h3 className="mb-3 text-sm font-bold text-foreground">Effort Tracking (Est. Hours/Week)</h3>
           <ResponsiveContainer width="100%" height={Math.max(200, effortData.length * 32)}>
             <BarChart data={effortData} layout="vertical" margin={{ left: 8, right: 16 }}>
-              <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} />
-              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} width={120} />
-              <Tooltip contentStyle={{ background: "hsl(160,8%,12%)", border: "1px solid hsl(160,6%,20%)", borderRadius: 8, fontSize: 11, color: "#fff" }} />
+              <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={120} />
+              <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11, color: "hsl(var(--foreground))" }} />
               <Bar dataKey="hours" radius={[0, 4, 4, 0]}>
                 {effortData.map((d, i) => <Cell key={i} fill={d.color} />)}
               </Bar>

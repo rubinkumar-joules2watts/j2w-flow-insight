@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
-const Projects = () => {
+const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -58,6 +58,16 @@ const Projects = () => {
     toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
     showSaved(`${id}-${field}`);
   }, [qc]);
+
+  const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
+    if (!project) return;
+    const { error } = await supabase.from("projects").update({ [field]: value } as any).eq("id", project.id);
+    if (error) { toast.error("Failed to update"); return; }
+    await writeAuditLog("projects", project.id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
+    qc.invalidateQueries({ queryKey: ["projects"] });
+    toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
+    showSaved(`proj-${field}`);
+  }, [qc, project]);
 
   // Add project form
   const [newProject, setNewProject] = useState({ clientName: "", name: "", code: "", serviceType: "Outcome", revenueModel: "Milestone", deliveryManager: "", clientSpoc: "", handledBy: "", memberIds: [] as string[] });
@@ -129,7 +139,7 @@ const Projects = () => {
 
   return (
     <AppLayout>
-      <Topbar title="Projects" />
+      <Topbar title="Projects" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Project Selector */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -158,16 +168,17 @@ const Projects = () => {
           <>
             {/* Project Header */}
             <div className="flex items-start justify-between rounded-lg border border-border bg-card p-5">
-              <div>
+              <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-bold text-foreground">{client?.name} · {project.name}</h2>
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {[project.service_type, project.revenue_model, project.handled_by].filter(Boolean).map((c) => (
-                    <span key={c} className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground">{c}</span>
-                  ))}
+                  <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
+                  <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
+                  <EditableSelect value={project.status || "Planning"} options={["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"]} onSave={(v) => updateProject("status", v, project.status)} />
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground space-x-4">
-                  {project.delivery_manager && <span>Manager: {project.delivery_manager}</span>}
-                  {project.client_spoc && <span>SPOC: {project.client_spoc}</span>}
+                <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
+                  <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
+                  <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
                 </div>
               </div>
               <div className="flex gap-6 text-right">
@@ -208,16 +219,37 @@ const Projects = () => {
                     )}
                     {projMilestones.map((m) => (
                       <tr key={m.id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-2 font-medium text-foreground">{m.milestone_code}</td>
-                        <td className="px-3 py-2 text-foreground max-w-[200px] truncate">{m.description}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{m.planned_start || "—"} → {m.planned_end || "TBD"}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{m.actual_start || "—"} → {m.actual_end_eta || "—"}</td>
+                        <td className="px-3 py-2 font-medium text-foreground">
+                          <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
+                        </td>
+                        <td className="px-3 py-2 text-foreground max-w-[200px]">
+                          <InlineEdit value={m.description || ""} onSave={(v) => updateMilestone(m.id, "description", v, m.description)} savedKey={savedField === `${m.id}-description`} />
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <input type="date" value={m.planned_start || ""} onChange={(e) => updateMilestone(m.id, "planned_start", e.target.value || null, m.planned_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <span>→</span>
+                            <input type="date" value={m.planned_end || ""} onChange={(e) => updateMilestone(m.id, "planned_end", e.target.value || null, m.planned_end)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <input type="date" value={m.actual_start || ""} onChange={(e) => updateMilestone(m.id, "actual_start", e.target.value || null, m.actual_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <span>→</span>
+                            <input type="date" value={m.actual_end_eta || ""} onChange={(e) => updateMilestone(m.id, "actual_end_eta", e.target.value || null, m.actual_end_eta)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                          </div>
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-16 rounded-full bg-secondary">
                               <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${m.completion_pct}%` }} />
                             </div>
-                            <span className="text-muted-foreground">{m.completion_pct}%</span>
+                            <input
+                              type="number" min={0} max={100} value={m.completion_pct ?? 0}
+                              onChange={(e) => updateMilestone(m.id, "completion_pct", Number(e.target.value), m.completion_pct)}
+                              className="w-10 bg-transparent text-xs text-muted-foreground outline-none text-right"
+                            />
+                            <span className="text-muted-foreground text-xs">%</span>
                           </div>
                         </td>
                         <td className="px-3 py-2">
@@ -439,4 +471,15 @@ const InlineEdit = ({ value, onSave, savedKey }: { value: string; onSave: (v: st
   );
 };
 
+const EditableSelect = ({ value, options, onSave }: { value: string; options: string[]; onSave: (v: string) => void }) => (
+  <select
+    value={value}
+    onChange={(e) => onSave(e.target.value)}
+    className="appearance-none rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground outline-none cursor-pointer hover:bg-muted transition-colors"
+  >
+    {options.map((o) => <option key={o} value={o}>{o}</option>)}
+  </select>
+);
+
 export default Projects;
+
