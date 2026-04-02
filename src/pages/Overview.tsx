@@ -198,10 +198,10 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
             <h3 className="mb-3 text-sm font-bold text-foreground">Milestone Completion by Client</h3>
             <ResponsiveContainer width="100%" height={160}>
               <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 0, right: 12 }}>
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(160,5%,55%)" }} width={60} />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={60} />
                 <Tooltip
-                  contentStyle={{ background: "hsl(160,8%,12%)", border: "1px solid hsl(160,6%,20%)", borderRadius: 8, fontSize: 11, color: "#fff" }}
+                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11, color: "hsl(var(--foreground))" }}
                   formatter={(v: number) => [`${v}%`, "Completion"]}
                 />
                 <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
