@@ -219,16 +219,37 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     )}
                     {projMilestones.map((m) => (
                       <tr key={m.id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-2 font-medium text-foreground">{m.milestone_code}</td>
-                        <td className="px-3 py-2 text-foreground max-w-[200px] truncate">{m.description}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{m.planned_start || "—"} → {m.planned_end || "TBD"}</td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{m.actual_start || "—"} → {m.actual_end_eta || "—"}</td>
+                        <td className="px-3 py-2 font-medium text-foreground">
+                          <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
+                        </td>
+                        <td className="px-3 py-2 text-foreground max-w-[200px]">
+                          <InlineEdit value={m.description || ""} onSave={(v) => updateMilestone(m.id, "description", v, m.description)} savedKey={savedField === `${m.id}-description`} />
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <input type="date" value={m.planned_start || ""} onChange={(e) => updateMilestone(m.id, "planned_start", e.target.value || null, m.planned_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <span>→</span>
+                            <input type="date" value={m.planned_end || ""} onChange={(e) => updateMilestone(m.id, "planned_end", e.target.value || null, m.planned_end)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          <div className="flex items-center gap-1">
+                            <input type="date" value={m.actual_start || ""} onChange={(e) => updateMilestone(m.id, "actual_start", e.target.value || null, m.actual_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <span>→</span>
+                            <input type="date" value={m.actual_end_eta || ""} onChange={(e) => updateMilestone(m.id, "actual_end_eta", e.target.value || null, m.actual_end_eta)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                          </div>
+                        </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-16 rounded-full bg-secondary">
                               <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${m.completion_pct}%` }} />
                             </div>
-                            <span className="text-muted-foreground">{m.completion_pct}%</span>
+                            <input
+                              type="number" min={0} max={100} value={m.completion_pct ?? 0}
+                              onChange={(e) => updateMilestone(m.id, "completion_pct", Number(e.target.value), m.completion_pct)}
+                              className="w-10 bg-transparent text-xs text-muted-foreground outline-none text-right"
+                            />
+                            <span className="text-muted-foreground text-xs">%</span>
                           </div>
                         </td>
                         <td className="px-3 py-2">
