@@ -34,6 +34,19 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: members } = useTeamMembers();
   const { data: assignments } = useAssignments();
   const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  // Realtime: auto-refresh all metrics when any table changes
+  useEffect(() => {
+    const channel = supabase.channel("overview-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "team_members" }, () => qc.invalidateQueries({ queryKey: ["team_members"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => qc.invalidateQueries({ queryKey: ["clients"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [qc]);
 
   const activeProjects = projects?.filter((p) => p.status !== "Completed") || [];
   const totalMilestones = milestones?.length || 0;
