@@ -94,7 +94,9 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       const { data: a } = await supabase.from("project_assignments").insert({ project_id: proj.id, team_member_id: mId }).select().single();
       if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
     }
-    qc.invalidateQueries({ queryKey: ["projects", "project_assignments"] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
+    qc.invalidateQueries({ queryKey: ["clients"] });
     toast.success(`✓ Project created · ${new Date().toLocaleTimeString()}`);
     setShowAddProject(false);
     navigate(`/projects?id=${proj.id}`);
