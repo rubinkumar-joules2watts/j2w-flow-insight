@@ -29,7 +29,18 @@ export type ProjectAssignment = {
   start_date: string | null; end_date: string | null;
 };
 export type ProjectUpdate = {
-  id: string; project_id: string; content: string; activity_date: string; created_at: string;
+  id: string; 
+  project_id: string; 
+  content: string; 
+  activity_date: string; 
+  created_at: string;
+  category?: "Internal" | "Sales" | "Cadence";
+  file_path?: string;
+  file_name?: string;
+};
+export type ProjectDocument = {
+  id: string; project_id: string; name: string; type: string; size: number; path: string; created_at: string;
+  category?: "Internal" | "Sales" | "Cadence";
 };
 
 export const useClients = () =>
@@ -85,4 +96,11 @@ export const useProjectUpdates = () =>
     const { data, error } = await supabase.from("project_updates").select("*").order("activity_date", { ascending: true });
     if (error) throw error;
     return data as ProjectUpdate[];
+  }});
+
+export const useProjectDocuments = () =>
+  useQuery({ queryKey: ["project_documents"], queryFn: async () => {
+    const { data, error } = await supabase.from("project_documents").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data as ProjectDocument[];
   }});

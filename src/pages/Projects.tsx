@@ -2,11 +2,11 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments } from "@/hooks/useData";
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, X, Check, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
 const formatDateReadable = (value: string | null | undefined) => {
@@ -46,7 +46,8 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: members } = useTeamMembers();
   const { data: assignments } = useAssignments();
   const { data: auditLog } = useAuditLog();
-  const { data: allUpdates } = useProjectUpdates();
+  const { data: allUpdates = [] } = useProjectUpdates();
+  const { data: projDocs = [] } = useProjectDocuments();
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
@@ -95,8 +96,17 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const [showAddHierarchyMember, setShowAddHierarchyMember] = useState(false);
   const [newUpdate, setNewUpdate] = useState("");
   const [updateDate, setUpdateDate] = useState(new Date().toISOString().split("T")[0]);
+  const [updateCategory, setUpdateCategory] = useState<"Internal" | "Sales" | "Cadence">("Internal");
+  const [uploadCategory, setUploadCategory] = useState<"Internal" | "Sales" | "Cadence">("Internal");
+  const [pendingUpdateFile, setPendingUpdateFile] = useState<File | null>(null);
+  const [timelineFilter, setTimelineFilter] = useState("all");
+  const [documentFilter, setDocumentFilter] = useState("all");
   const [isAddingUpdate, setIsAddingUpdate] = useState(false);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadingUpdateId, setUploadingUpdateId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const tileFileInputRef = useRef<HTMLInputElement>(null);
   const [newHierarchyMember, setNewHierarchyMember] = useState({
     name: "",
     role: "Developer",
@@ -117,6 +127,9 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     const bySearch = !milestoneSearch.trim() || `${m.milestone_code || ""} ${m.description || ""}`.toLowerCase().includes(milestoneSearch.toLowerCase().trim());
     return byStatus && bySearch;
   });
+
+  const filteredProjDocs = projDocs.filter((d) => d.project_id === selectedId)
+    .filter((d) => documentFilter === "all" || d.category === documentFilter);
 
   // Realtime subscription
   useEffect(() => {
@@ -336,21 +349,68 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const handleAddUpdate = async () => {
     if (!newUpdate.trim() || !project) return;
     setIsAddingUpdate(true);
-    const { error } = await supabase.from("project_updates").insert({
+    const { data: updateData, error } = await supabase.from("project_updates").insert({
       project_id: project.id,
       content: newUpdate.trim(),
       activity_date: updateDate,
-    });
+      category: updateCategory,
+    }).select().single();
 
     if (error) {
       toast.error("Failed to add update");
     } else {
+      if (pendingUpdateFile && updateData) {
+        await executeUpload(pendingUpdateFile, project.id, updateData.id, updateCategory);
+      }
       setNewUpdate("");
       setUpdateDate(new Date().toISOString().split("T")[0]);
+      setPendingUpdateFile(null);
       qc.invalidateQueries({ queryKey: ["project_updates"] });
       toast.success("Timeline updated");
     }
     setIsAddingUpdate(false);
+  };
+
+  const executeUpload = async (file: File, projId: string, updateId?: string, category?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("project_id", projId);
+    if (updateId) formData.append("update_id", updateId);
+    if (category) formData.append("category", category);
+
+    const response = await fetch("/api/upload", { method: "POST", body: formData });
+    if (!response.ok) throw new Error("Upload failed");
+    qc.invalidateQueries({ queryKey: ["project_documents"] });
+    qc.invalidateQueries({ queryKey: ["project_updates"] });
+  };
+
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>, updateId?: string) => {
+    const file = e.target.files?.[0];
+    if (!file || !project) return;
+    
+    if (updateId) setUploadingUpdateId(updateId);
+    else setIsUploading(true);
+
+    try {
+      await executeUpload(file, project.id, updateId, "Internal");
+      toast.success(updateId ? "Attachment added" : "File uploaded");
+    } catch (err) {
+      toast.error("Upload failed");
+    } finally {
+      setIsUploading(false);
+      setUploadingUpdateId(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (tileFileInputRef.current) tileFileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    const { error } = await supabase.from("project_documents").delete().eq("id", docId);
+    if (error) toast.error("Failed to delete");
+    else {
+      qc.invalidateQueries({ queryKey: ["project_documents"] });
+      toast.success("Document deleted");
+    }
   };
 
   const hierarchyChildrenByManager = assignedMembers.reduce((acc, member) => {
@@ -527,29 +587,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     <AppLayout>
       <Topbar title="Projects" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
-        {/* Project Selector */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {filteredProjects.map((p) => {
-            const cl = clients?.find((c) => c.id === p.client_id);
-            return (
-              <button
-                key={p.id}
-                onClick={() => navigate(`/projects?id=${p.id}`)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  p.id === selectedId
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                }`}
-              >
-                {cl?.name} · {p.name}
-              </button>
-            );
-          })}
-          <button onClick={() => setShowAddProject(true)} className="shrink-0 flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-            <Plus size={14} /> Add Project
-          </button>
-        </div>
-
+        {/* Filters */}
         <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
           <select
             value={projectClientFilter}
@@ -579,13 +617,45 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
           />
         </div>
 
+        {/* Project Selector */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+          {filteredProjects.map((p) => {
+            const cl = clients?.find((c) => c.id === p.client_id);
+            return (
+              <button
+                key={p.id}
+                onClick={() => navigate(`/projects?id=${p.id}`)}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  p.id === selectedId
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                }`}
+              >
+                {cl?.name} · {p.name}
+              </button>
+            );
+          })}
+          <button onClick={() => setShowAddProject(true)} className="shrink-0 flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
+            <Plus size={14} /> Add Project
+          </button>
+        </div>
+
         {project && (
           <>
             {/* Project Header */}
             <div className="flex items-start justify-between rounded-lg border border-border bg-card p-5">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-foreground">{client?.name} · {project.name}</h2>
+                  <h2 className="text-lg font-bold text-foreground flex items-center gap-1.5">
+                    <span className="text-muted-foreground/60 font-semibold">{client?.name}</span>
+                    <span className="text-muted-foreground/40 font-light">·</span>
+                    <InlineEdit 
+                      value={project.name} 
+                      onSave={(v) => updateProject("name", v, project.name)} 
+                      savedKey={savedField === "proj-name"}
+                      className="hover:text-primary transition-colors cursor-text"
+                    />
+                  </h2>
                   {confirmDeleteProject === project.id ? (
                     <div className="flex items-center gap-1">
                       <span className="text-[10px] text-destructive">Delete project?</span>
@@ -630,36 +700,110 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <MessageSquare size={20} />
                 </div>
-                <div className="flex-1 flex gap-2">
-                  <input
-                    type="date"
-                    value={updateDate}
-                    onChange={(e) => setUpdateDate(e.target.value)}
-                    className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background h-[42px]"
-                    disabled={isAddingUpdate}
-                  />
+                <div className="flex-1 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={updateDate}
+                      onChange={(e) => setUpdateDate(e.target.value)}
+                      className="rounded-lg border border-border bg-secondary/30 px-3 py-1.5 text-xs outline-none transition-all focus:border-primary/50 focus:bg-background h-[32px] w-[140px]"
+                      disabled={isAddingUpdate}
+                    />
+                    <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border">
+                      {(["Internal", "Sales", "Cadence"] as const).map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setUpdateCategory(cat)}
+                          className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${
+                            updateCategory === cat
+                              ? cat === "Internal" ? "bg-blue-500 text-white shadow-sm" :
+                                cat === "Sales" ? "bg-emerald-500 text-white shadow-sm" :
+                                "bg-orange-500 text-white shadow-sm"
+                              : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="relative flex-1">
                     <input
                       value={newUpdate}
                       onChange={(e) => setNewUpdate(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handleAddUpdate()}
                       placeholder="Type project update or activity detail here... (e.g. SOW Signed)"
-                      className="w-full rounded-lg border border-border bg-secondary/30 px-4 py-2.5 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/10 h-[42px]"
+                      className="w-full rounded-lg border border-border bg-secondary/30 px-4 py-2.5 pr-12 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/10 h-[42px]"
                       disabled={isAddingUpdate}
                     />
-                    <button
-                      onClick={handleAddUpdate}
-                      disabled={isAddingUpdate || !newUpdate.trim()}
-                      className="absolute right-2 top-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      <Send size={14} />
-                    </button>
+                    <div className="absolute right-2 top-1.5 flex items-center gap-1">
+                       <button
+                         type="button"
+                         onClick={() => {
+                           const el = document.createElement('input');
+                           el.type = 'file';
+                           el.onchange = (e) => {
+                             const f = (e.target as HTMLInputElement).files?.[0];
+                             if (f) setPendingUpdateFile(f);
+                           };
+                           el.click();
+                         }}
+                         className={`flex h-7 w-7 items-center justify-center rounded-md border transition-all ${pendingUpdateFile ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+                         title={pendingUpdateFile ? `Ready to upload: ${pendingUpdateFile.name}` : "Attach document"}
+                       >
+                         <Paperclip size={14} className={pendingUpdateFile ? "animate-pulse" : ""} />
+                       </button>
+                       <button
+                         onClick={handleAddUpdate}
+                         disabled={isAddingUpdate || (!newUpdate.trim() && !pendingUpdateFile)}
+                         className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
+                       >
+                         <Send size={14} />
+                       </button>
+                    </div>
                   </div>
+                  {pendingUpdateFile && (
+                    <div className="flex items-center gap-2 px-1">
+                       <div className="flex items-center gap-1.5 rounded-full bg-primary/5 border border-primary/20 px-2 py-0.5 animate-in slide-in-from-top-1 duration-200">
+                         <FileText size={10} className="text-primary" />
+                         <span className="text-[10px] font-bold text-primary truncate max-w-[200px]">{pendingUpdateFile.name}</span>
+                         <button onClick={() => setPendingUpdateFile(null)} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
+                            <X size={10} />
+                         </button>
+                       </div>
+                       <span className="text-[10px] text-muted-foreground animate-pulse">will be uploaded with update</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Timeline Feed */}
+            <div className="relative">
+               <div className="flex items-center justify-between mb-2 px-1">
+                 <div className="flex items-center gap-2">
+                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Filters</h4>
+                   <div className="flex items-center gap-1.5 ml-2">
+                     {["all", "Internal", "Sales", "Cadence"].map((f) => (
+                       <button
+                         key={f}
+                         onClick={() => setTimelineFilter(f)}
+                         className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold transition-all border ${
+                           timelineFilter === f
+                             ? f === "Internal" ? "bg-blue-500 border-blue-500 text-white" :
+                               f === "Sales" ? "bg-emerald-500 border-emerald-500 text-white" :
+                               f === "Cadence" ? "bg-orange-500 border-orange-500 text-white" :
+                               "bg-foreground border-foreground text-background"
+                             : "bg-secondary/50 border-border/50 text-muted-foreground hover:border-primary/30"
+                         }`}
+                       >
+                         {f.toUpperCase()}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
+               </div>
+
             {projUpdates.length > 0 && (
               <div className="relative">
                 <div className="flex items-start gap-2 overflow-x-auto pb-4 no-scrollbar">
@@ -677,29 +821,73 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     <div className="flex flex-1 items-center gap-3 py-1 cursor-pointer" onClick={() => setIsTimelineCollapsed(false)}>
                        <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-[11px] font-bold text-muted-foreground shadow-sm hover:border-primary/40 transition-all">
                          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                         {projUpdates.length} update{projUpdates.length !== 1 ? 's' : ''} in timeline
+                         {projUpdates.filter(u => timelineFilter === "all" || u.category === timelineFilter).length} update{projUpdates.length !== 1 ? 's' : ''} in timeline
                          <ChevronRight size={10} className="ml-1" />
                        </div>
                     </div>
                   ) : (
                     <div className="flex gap-3 min-h-[80px]">
-                      {[...projUpdates].reverse().map((u, idx) => (
+                      {projUpdates
+                        .filter(u => timelineFilter === "all" || u.category === timelineFilter)
+                        .slice().reverse().map((u, idx) => (
                         <div 
                           key={u.id} 
-                          className="group relative flex min-w-[200px] max-w-[240px] flex-col rounded-xl border border-border/60 bg-card p-3 shadow-sm transition-all hover:border-primary/40 hover:shadow-md animate-in fade-in slide-in-from-left-2 duration-300"
+                          className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${
+                            u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
+                            u.category === "Cadence" ? "border-orange-200/60 hover:border-orange-400 hover:shadow-orange-500/5 translate-y-0" :
+                            "border-blue-200/60 hover:border-blue-400 hover:shadow-blue-500/5 translate-y-0"
+                          }`}
                         >
                           <div className="mb-2 flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary">
+                            <div className={`flex items-center gap-1.5 text-[10px] font-bold ${
+                              u.category === "Sales" ? "text-emerald-600" :
+                              u.category === "Cadence" ? "text-orange-600" :
+                              "text-blue-600"
+                            }`}>
                               <Calendar size={10} />
                               {new Date(u.activity_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider ${
+                                u.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
+                                u.category === "Cadence" ? "bg-orange-100 text-orange-700" :
+                                "bg-blue-100 text-blue-700"
+                              }`}>
+                                {u.category || "Internal"}
+                              </span>
                             </div>
-                            <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
-                              Manual
-                            </span>
+                            <div className="flex items-center gap-1">
+                               <button 
+                                 onClick={() => {
+                                   setUploadingUpdateId(u.id);
+                                   tileFileInputRef.current?.click();
+                                 }}
+                                 className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                                 disabled={uploadingUpdateId === u.id}
+                                 title="Attach document"
+                               >
+                                 {uploadingUpdateId === u.id ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
+                               </button>
+                               <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
+                                 Manual
+                               </span>
+                            </div>
                           </div>
-                          <p className="text-xs text-foreground line-clamp-3 leading-relaxed">
+                          <p className="text-xs text-foreground line-clamp-3 leading-relaxed mb-2">
                             {u.content}
                           </p>
+                          
+                          {u.file_path && (
+                             <a 
+                               href={`/${u.file_path}`} 
+                               target="_blank" 
+                               rel="noopener noreferrer"
+                               className="mt-auto flex items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10"
+                               title={u.file_name}
+                             >
+                                <LinkIcon size={8} />
+                                <span className="truncate max-w-[150px]">{u.file_name}</span>
+                             </a>
+                          )}
+
                           {idx !== 0 && (
                              <div className="absolute -left-3 top-1/2 h-[1px] w-3 bg-border group-hover:bg-primary/20" />
                           )}
@@ -710,6 +898,15 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 </div>
               </div>
             )}
+            </div>
+
+            {/* Hidden Input for Tile Upload */}
+            <input 
+              type="file" 
+              ref={tileFileInputRef} 
+              onChange={(e) => handleUploadFile(e, uploadingUpdateId || undefined)} 
+              className="hidden" 
+            />
 
             {/* Milestone Tracker */}
             <div className="rounded-lg border border-border bg-card">
@@ -760,8 +957,13 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         <td className="px-3 py-2 font-medium text-foreground">
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
                         </td>
-                        <td className="px-3 py-2 text-foreground max-w-[200px]">
-                          <InlineEdit value={m.description || ""} onSave={(v) => updateMilestone(m.id, "description", v, m.description)} savedKey={savedField === `${m.id}-description`} />
+                        <td className="px-3 py-2 text-foreground min-w-[200px] max-w-[400px] whitespace-normal break-words">
+                          <InlineEdit 
+                            value={m.description || ""} 
+                            onSave={(v) => updateMilestone(m.id, "description", v, m.description)} 
+                            savedKey={savedField === `${m.id}-description`}
+                            multiline
+                          />
                         </td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                           <div className="flex items-center gap-1">
@@ -968,11 +1170,11 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 <h3 className="text-sm font-bold text-foreground">Edit History</h3>
                 <span className="text-[10px] text-muted-foreground ml-auto">{projectAudit.length} entries</span>
               </div>
-              <div className="max-h-[300px] overflow-y-auto">
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                 {projectAudit.length === 0 && (
                   <p className="px-4 py-6 text-xs text-muted-foreground text-center">No changes recorded yet</p>
                 )}
-                {projectAudit.map((entry) => {
+                {[...projectAudit].reverse().map((entry) => {
                   const time = entry.created_at ? new Date(entry.created_at) : null;
                   const changedFields = entry.changed_fields as string[] | null;
                   const oldVals = entry.old_values as Record<string, unknown> | null;
@@ -986,7 +1188,6 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     const msCode = (newVals?.milestone_code || oldVals?.milestone_code || "") as string;
                     if (entry.action === "UPDATE" && changedFields?.length) {
                       description = `Milestone ${msCode}: ${changedFields.map((f) => {
-                        const oldV = oldVals?.[f] ?? "—";
                         const newV = newVals?.[f] ?? "—";
                         return `${f.replace(/_/g, " ")} → ${newV}`;
                       }).join(", ")}`;
@@ -1023,6 +1224,116 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Project Documents */}
+            <div className="rounded-lg border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <div className="flex items-center gap-4">
+                  <h3 className="text-sm font-bold text-foreground">Project Documents</h3>
+                  <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border">
+                    {["all", "Internal", "Sales", "Cadence"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setDocumentFilter(f)}
+                        className={`px-2 py-0.5 rounded text-[8px] font-bold transition-all ${
+                          documentFilter === f
+                            ? "bg-foreground text-background"
+                            : "text-muted-foreground hover:bg-secondary"
+                        }`}
+                      >
+                        {f.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                   <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border mr-2">
+                      {(["Internal", "Sales", "Cadence"] as const).map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setUploadCategory(cat)}
+                          className={`px-2 py-0.5 text-[8px] font-extrabold rounded transition-all ${
+                            uploadCategory === cat
+                              ? cat === "Internal" ? "bg-blue-500 text-white" :
+                                cat === "Sales" ? "bg-emerald-500 text-white" :
+                                "bg-orange-500 text-white"
+                              : "text-muted-foreground hover:bg-secondary/50"
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                   <button 
+                    onClick={() => fileInputRef.current?.click()} 
+                    disabled={isUploading}
+                    className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+                  >
+                    {isUploading ? <Loader2 size={12} className="animate-spin" /> : <FileUp size={14} />} 
+                    Upload File
+                  </button>
+                  <input type="file" ref={fileInputRef} onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f && project) {
+                      setIsUploading(true);
+                      executeUpload(f, project.id, undefined, uploadCategory)
+                        .then(() => toast.success("File uploaded"))
+                        .catch(() => toast.error("Upload failed"))
+                        .finally(() => {
+                           setIsUploading(false);
+                           if (fileInputRef.current) fileInputRef.current.value = "";
+                        });
+                    }
+                  }} className="hidden" />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b border-border text-left text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Name</th>
+                      <th className="px-4 py-2 font-medium text-center">Category</th>
+                      <th className="px-4 py-2 font-medium">Type</th>
+                      <th className="px-4 py-2 font-medium">Size</th>
+                      <th className="px-4 py-2 font-medium">Date</th>
+                      <th className="px-4 py-2 font-medium text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {filteredProjDocs.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No documents found matching filter</td></tr>
+                    )}
+                    {filteredProjDocs.map((doc) => (
+                      <tr key={doc.id} className="hover:bg-secondary/20 transition-colors">
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <FileText size={14} className="text-primary" />
+                            <span className="font-medium text-foreground">{doc.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase ${
+                            doc.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
+                            doc.category === "Cadence" ? "bg-orange-100 text-orange-700" :
+                            "bg-blue-100 text-blue-700"
+                          }`}>
+                            {doc.category || "Internal"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-muted-foreground">.{doc.type}</td>
+                        <td className="px-4 py-2 text-muted-foreground">{(doc.size / 1024 / 1024).toFixed(2)} MB</td>
+                        <td className="px-4 py-2 text-muted-foreground">{new Date(doc.created_at).toLocaleDateString()}</td>
+                        <td className="px-4 py-2 text-right">
+                          <a href={`/${doc.path}`} download={doc.name} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
+                            <Download size={12} />
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </>
@@ -1162,7 +1473,7 @@ const ModalOverlay = ({ onClose, title, children }: { onClose: () => void; title
   </div>
 );
 
-const InlineEdit = ({ value, onSave, savedKey, multiline = false }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean }) => {
+const InlineEdit = ({ value, onSave, savedKey, multiline = false, className = "" }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean; className?: string }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const timerRef = useRef<number>();
@@ -1208,7 +1519,7 @@ const InlineEdit = ({ value, onSave, savedKey, multiline = false }: { value: str
     <div className="relative">
       <span
         onClick={() => setEditing(true)}
-        className={`cursor-pointer text-muted-foreground hover:text-foreground block ${multiline ? "whitespace-normal break-words" : "max-w-[160px] truncate"}`}
+        className={`cursor-pointer text-muted-foreground hover:text-foreground block ${multiline ? "whitespace-normal break-words" : "max-w-[160px] truncate"} ${className}`}
       >
         {value || "—"}
       </span>

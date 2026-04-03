@@ -71,14 +71,14 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     : 0;
   const blockerCount = filteredMilestones.filter((m) => m.blocker).length || 0;
   const doneCount = filteredMilestones.filter((m) => m.completion_pct === 100).length || 0;
-  const amberCount = filteredMilestones.filter((m) => m.milestone_flag === "amber").length || 0;
-  const redCount = filteredMilestones.filter((m) => m.milestone_flag === "red").length || 0;
+  const amberCount = filteredMilestones.filter((m) => m.milestone_flag === "amber" && m.completion_pct !== 100).length || 0;
+  const redCount = filteredMilestones.filter((m) => m.milestone_flag === "red" && m.completion_pct !== 100).length || 0;
   const invoicesRaised = filteredMilestones.filter((m) => m.invoice_status === "Raised").length || 0;
   const teamDeployed = members?.filter((m) => m.is_active).length || 0;
 
   const milestonesDone = filteredMilestones.filter((m) => m.completion_pct === 100) || [];
-  const milestonesAmber = filteredMilestones.filter((m) => m.milestone_flag === "amber") || [];
-  const milestonesRed = filteredMilestones.filter((m) => m.milestone_flag === "red") || [];
+  const milestonesAmber = filteredMilestones.filter((m) => m.milestone_flag === "amber" && m.completion_pct !== 100) || [];
+  const milestonesRed = filteredMilestones.filter((m) => m.milestone_flag === "red" && m.completion_pct !== 100) || [];
   const invoiceRaisedRows = filteredMilestones.filter((m) => m.invoice_status === "Raised") || [];
   const invoicePendingRows = filteredMilestones.filter((m) => m.invoice_status === "Pending") || [];
   const deployedMembers = members?.filter((m) => m.is_active) || [];
@@ -104,7 +104,7 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       return { ...m, projectName: proj?.name || "" };
     }) || [];
 
-  const invoicesPending = filteredMilestones.filter((m) => m.invoice_status === "Pending").length || 0;
+  const invoicesPending = filteredMilestones.filter((m) => m.invoice_status === "Pending" && m.completion_pct === 100).length || 0;
   const now = new Date();
   const thisMonth = now.getMonth();
   const thisYear = now.getFullYear();
@@ -413,19 +413,32 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     </tr>
                   </thead>
                   <tbody>
-                    {(activeTile === "invoicesPending" ? invoicePendingRows :
-                      activeTile === "done" ? milestonesDone :
-                      activeTile === "amber" ? milestonesAmber :
-                      activeTile === "red" ? milestonesRed : invoiceRaisedRows).map((m) => (
-                      <tr key={m.id} className="border-b border-border last:border-0">
-                        <td className="px-2 py-2 text-muted-foreground">{getClientName(m.project_id)}</td>
-                        <td className="px-2 py-2 text-foreground">{getProjectName(m.project_id)}</td>
-                        <td className="px-2 py-2 text-foreground">{m.milestone_code || "-"} · {m.description || "-"}</td>
-                        <td className="px-2 py-2 text-muted-foreground">{m.status || "-"}</td>
-                        <td className="px-2 py-2 text-muted-foreground">{m.completion_pct ?? 0}%</td>
-                        <td className="px-2 py-2 text-muted-foreground">{m.invoice_status || "-"}</td>
-                      </tr>
-                    ))}
+                    {(() => {
+                      const rows = (activeTile === "invoicesPending" ? invoicePendingRows :
+                        activeTile === "done" ? milestonesDone :
+                        activeTile === "amber" ? milestonesAmber :
+                        activeTile === "red" ? milestonesRed : invoiceRaisedRows);
+                      
+                      // Defensive deduplication by project + description + status
+                      const seen = new Set();
+                      const uniqueRows = rows.filter(m => {
+                        const key = `${m.project_id}-${m.milestone_code}-${m.description}-${m.status}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                      });
+
+                      return uniqueRows.map((m) => (
+                        <tr key={m.id} className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors">
+                          <td className="px-2 py-2 text-muted-foreground">{getClientName(m.project_id)}</td>
+                          <td className="px-2 py-2 text-foreground font-medium">{getProjectName(m.project_id)}</td>
+                          <td className="px-2 py-2 text-foreground">{m.milestone_code || "-"} · {m.description || "-"}</td>
+                          <td className="px-2 py-2 text-muted-foreground">{m.status || "-"}</td>
+                          <td className="px-2 py-2 text-muted-foreground">{m.completion_pct ?? 0}%</td>
+                          <td className="px-2 py-2 text-muted-foreground">{m.invoice_status || "-"}</td>
+                        </tr>
+                      ));
+                    })()}
                   </tbody>
                 </table>
               )}

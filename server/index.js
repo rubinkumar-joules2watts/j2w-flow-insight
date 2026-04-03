@@ -3,12 +3,44 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
 import { randomUUID } from "crypto";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Ensure uploads directory exists
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+
+// Serve uploaded files statically
+app.use("/uploads", express.static(UPLOADS_DIR));
+
+// Multer Storage Configuration
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, UPLOADS_DIR);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueName = `${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 } // 20MB limit
+});
 
 const PORT = Number(process.env.API_PORT || 4000);
 const MONGO_URI =
@@ -52,6 +84,7 @@ const COLLECTIONS = new Set([
   "project_assignments",
   "audit_log",
   "project_updates",
+  "project_documents",
 ]);
 
 const ensureIndexes = async () => {
@@ -98,7 +131,7 @@ const normalizeTimestampsOnInsert = (table, doc) => {
     next.updated_at = next.updated_at || now;
   }
 
-  if (["project_assignments", "project_updates"].includes(table)) {
+  if (["project_assignments", "project_updates", "project_documents"].includes(table)) {
     next.created_at = next.created_at || now;
   }
 
@@ -270,8 +303,58 @@ app.delete("/api/:table/:id", validateTable, async (req, res) => {
     const table = req.params.table;
     const id = req.params.id;
     const existing = await db.collection(table).findOne({ id });
+    
+    // If deleting a document, also remove the local file
+    if (table === "project_documents" && existing?.path) {
+       const fullPath = path.join(process.cwd(), existing.path);
+       if (fs.existsSync(fullPath)) {
+         fs.unlinkSync(fullPath);
+       }
+    }
+
     await db.collection(table).deleteOne({ id });
     res.json({ ok: true, deleted: withId(existing) });
+  } catch (error) {
+    res.status(500).json({ error: String(error) });
+  }
+});
+
+// Specialized Upload Endpoint
+app.post("/api/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const { project_id, update_id } = req.body;
+    if (!project_id) {
+       return res.status(400).json({ error: "Project ID is required" });
+    }
+
+    const fileDetails = {
+      name: req.file.originalname,
+      size: req.file.size,
+      type: req.file.mimetype,
+      path: `uploads/${req.file.filename}`,
+      project_id: project_id,
+    };
+
+    const docRecord = normalizeTimestampsOnInsert("project_documents", fileDetails);
+    await db.collection("project_documents").insertOne(docRecord);
+
+    // If an update_id is provided, also link it to the project_update
+    if (update_id) {
+       await db.collection("project_updates").updateOne(
+         { id: update_id },
+         { $set: { 
+             file_path: fileDetails.path, 
+             file_name: fileDetails.name 
+           } 
+         }
+       );
+    }
+
+    res.status(201).json(withId(docRecord));
   } catch (error) {
     res.status(500).json({ error: String(error) });
   }

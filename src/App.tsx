@@ -13,7 +13,7 @@ const queryClient = new QueryClient();
 const AppInner = () => {
   const theme = useTheme();
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/" element={<Overview themeToggle={theme} />} />
         <Route path="/projects" element={<Projects themeToggle={theme} />} />

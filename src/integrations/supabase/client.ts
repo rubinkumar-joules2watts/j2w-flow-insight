@@ -15,7 +15,7 @@ class SelectBuilder<T = any> {
     return this;
   }
 
-  async then(resolve: (value: any) => any, reject?: (reason: any) => any) {
+  async then(resolve: (value: any) => any, _reject?: (reason: any) => any) {
     try {
       const params = new URLSearchParams();
       if (this.orderBy) {
@@ -119,12 +119,12 @@ const from = <T = any>(table: string) => ({
 
 export const supabase = {
   from,
-  channel: () => {
+  channel: (..._args: any[]) => {
     const mockChannel = {
-      on: () => mockChannel,
-      subscribe: () => mockChannel,
+      on: (..._args: any[]) => mockChannel,
+      subscribe: (..._args: any[]) => mockChannel,
     };
     return mockChannel;
   },
-  removeChannel: () => undefined,
+  removeChannel: (..._args: any[]) => undefined,
 };
