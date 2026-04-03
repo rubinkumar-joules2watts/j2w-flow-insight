@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
@@ -6,8 +6,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Activity, CheckCircle, AlertTriangle, AlertOctagon, FileText, Users } from "lucide-react";
+import { Activity, CheckCircle, AlertTriangle, AlertOctagon, FileText, Users, X } from "lucide-react";
 import j2wLogo from "@/assets/j2w-logo.png";
+
+type OverviewTileKey = "done" | "amber" | "red" | "invoices" | "invoicesPending" | "team";
 
 const flagColor = (f: string | null) => {
   if (f === "green") return "bg-success";
@@ -35,6 +37,10 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: assignments } = useAssignments();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [activeTile, setActiveTile] = useState<OverviewTileKey | null>(null);
+  const [clientFilter, setClientFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectSearch, setProjectSearch] = useState("");
 
   // Realtime: auto-refresh all metrics when any table changes
   useEffect(() => {
@@ -48,29 +54,46 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     return () => { supabase.removeChannel(channel); };
   }, [qc]);
 
-  const activeProjects = projects?.filter((p) => p.status !== "Completed") || [];
-  const totalMilestones = milestones?.length || 0;
-  const avgCompletion = milestones?.length
-    ? Math.round(milestones.reduce((s, m) => s + (m.completion_pct || 0), 0) / milestones.length)
+  const filteredProjects = (projects || []).filter((p) => {
+    const byClient = clientFilter === "all" || p.client_id === clientFilter;
+    const byStatus = statusFilter === "all" || (p.status || "") === statusFilter;
+    const bySearch = !projectSearch.trim() || p.name.toLowerCase().includes(projectSearch.toLowerCase().trim());
+    return byClient && byStatus && bySearch;
+  });
+
+  const filteredProjectIds = new Set(filteredProjects.map((p) => p.id));
+  const filteredMilestones = (milestones || []).filter((m) => filteredProjectIds.has(m.project_id || ""));
+
+  const activeProjects = filteredProjects.filter((p) => p.status !== "Completed") || [];
+  const totalMilestones = filteredMilestones.length || 0;
+  const avgCompletion = filteredMilestones.length
+    ? Math.round(filteredMilestones.reduce((s, m) => s + (m.completion_pct || 0), 0) / filteredMilestones.length)
     : 0;
-  const blockerCount = milestones?.filter((m) => m.blocker).length || 0;
-  const doneCount = milestones?.filter((m) => m.completion_pct === 100).length || 0;
-  const amberCount = milestones?.filter((m) => m.milestone_flag === "amber").length || 0;
-  const redCount = milestones?.filter((m) => m.milestone_flag === "red").length || 0;
-  const invoicesRaised = milestones?.filter((m) => m.invoice_status === "Raised").length || 0;
+  const blockerCount = filteredMilestones.filter((m) => m.blocker).length || 0;
+  const doneCount = filteredMilestones.filter((m) => m.completion_pct === 100).length || 0;
+  const amberCount = filteredMilestones.filter((m) => m.milestone_flag === "amber").length || 0;
+  const redCount = filteredMilestones.filter((m) => m.milestone_flag === "red").length || 0;
+  const invoicesRaised = filteredMilestones.filter((m) => m.invoice_status === "Raised").length || 0;
   const teamDeployed = members?.filter((m) => m.is_active).length || 0;
+
+  const milestonesDone = filteredMilestones.filter((m) => m.completion_pct === 100) || [];
+  const milestonesAmber = filteredMilestones.filter((m) => m.milestone_flag === "amber") || [];
+  const milestonesRed = filteredMilestones.filter((m) => m.milestone_flag === "red") || [];
+  const invoiceRaisedRows = filteredMilestones.filter((m) => m.invoice_status === "Raised") || [];
+  const invoicePendingRows = filteredMilestones.filter((m) => m.invoice_status === "Pending") || [];
+  const deployedMembers = members?.filter((m) => m.is_active) || [];
 
   // Milestone completion by client
   const clientCompletionData = clients?.map((c) => {
-    const projIds = projects?.filter((p) => p.client_id === c.id).map((p) => p.id) || [];
-    const clientMs = milestones?.filter((m) => projIds.includes(m.project_id || "")) || [];
+    const projIds = filteredProjects.filter((p) => p.client_id === c.id).map((p) => p.id) || [];
+    const clientMs = filteredMilestones.filter((m) => projIds.includes(m.project_id || "")) || [];
     const done = clientMs.filter((m) => m.completion_pct === 100).length;
     const total = clientMs.length;
     return { name: c.name, pct: total ? Math.round((done / total) * 100) : 0, done, total };
   }) || [];
 
   // Active blockers
-  const activeBlockers = milestones
+  const activeBlockers = filteredMilestones
     ?.filter((m) => m.blocker)
     .sort((a, b) => {
       const order: Record<string, number> = { red: 0, amber: 1, grey: 2, green: 3 };
@@ -81,11 +104,27 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       return { ...m, projectName: proj?.name || "" };
     }) || [];
 
-  const invoicesPending = milestones?.filter((m) => m.invoice_status === "Pending").length || 0;
-  const upcomingDeadlines = milestones
-    ?.filter((m) => m.planned_end && m.completion_pct !== 100)
-    .sort((a, b) => (a.planned_end || "").localeCompare(b.planned_end || ""))
-    .slice(0, 3) || [];
+  const invoicesPending = filteredMilestones.filter((m) => m.invoice_status === "Pending").length || 0;
+  const now = new Date();
+  const thisMonth = now.getMonth();
+  const thisYear = now.getFullYear();
+
+  const upcomingInvoicesThisMonth = filteredMilestones
+    ?.filter((m) => {
+      if (m.completion_pct === 100) return false;
+      if (m.invoice_status !== "Pending") return false;
+      const targetDate = m.planned_start || m.planned_end;
+      if (!targetDate) return false;
+      const d = new Date(targetDate);
+      if (Number.isNaN(d.getTime())) return false;
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    })
+    .sort((a, b) => {
+      const da = new Date(a.planned_start || a.planned_end || "9999-12-31").getTime();
+      const db = new Date(b.planned_start || b.planned_end || "9999-12-31").getTime();
+      return da - db;
+    })
+    .slice(0, 6) || [];
 
   const getProjectResources = (projectId: string) => {
     const memberIds = assignments?.filter((a) => a.project_id === projectId).map((a) => a.team_member_id) || [];
@@ -97,6 +136,17 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     const done = pMs.filter((m) => m.completion_pct === 100).length;
     return { done, total: pMs.length };
   };
+
+  const getProjectName = (projectId: string | null) =>
+    projects?.find((p) => p.id === projectId)?.name || "Unknown project";
+
+  const getClientName = (projectId: string | null) => {
+    const p = projects?.find((proj) => proj.id === projectId);
+    return clients?.find((c) => c.id === p?.client_id)?.name || "Unknown client";
+  };
+
+  const getMemberProjectCount = (memberId: string) =>
+    assignments?.filter((a) => a.team_member_id === memberId).length || 0;
 
   return (
     <AppLayout>
@@ -136,22 +186,57 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       </div>
 
       <div className="p-6 space-y-5 animate-fade-in">
+        {/* Filters */}
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Clients</option>
+            {(clients || []).map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Status</option>
+            {["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <input
+            value={projectSearch}
+            onChange={(e) => setProjectSearch(e.target.value)}
+            placeholder="Search Project"
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          />
+        </div>
+
         {/* KPI Row */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-6 gap-3">
           {[
-            { icon: CheckCircle, label: "Milestones Done", value: doneCount, color: "text-success" },
-            { icon: AlertTriangle, label: "In Progress (Amber)", value: amberCount, color: "text-warning" },
-            { icon: AlertOctagon, label: "Critical / Red", value: redCount, color: "text-destructive" },
-            { icon: FileText, label: "Invoices Raised", value: invoicesRaised, color: "text-primary" },
-            { icon: Users, label: "Team Deployed", value: teamDeployed, color: "text-accent" },
+            { key: "done" as OverviewTileKey, icon: CheckCircle, label: "Milestones Done", value: doneCount, color: "text-success" },
+            { key: "amber" as OverviewTileKey, icon: AlertTriangle, label: "In Progress (Amber)", value: amberCount, color: "text-warning" },
+            { key: "red" as OverviewTileKey, icon: AlertOctagon, label: "Critical / Red", value: redCount, color: "text-destructive" },
+            { key: "invoices" as OverviewTileKey, icon: FileText, label: "Invoices Raised", value: invoicesRaised, color: "text-primary" },
+            { key: "invoicesPending" as OverviewTileKey, icon: FileText, label: "Invoices Pending", value: invoicesPending, color: "text-warning" },
+            { key: "team" as OverviewTileKey, icon: Users, label: "Team Deployed", value: teamDeployed, color: "text-accent" },
           ].map((kpi) => (
-            <div key={kpi.label} className="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
+            <button
+              key={kpi.label}
+              onClick={() => setActiveTile(kpi.key)}
+              className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary/40"
+            >
               <kpi.icon size={20} className={kpi.color} />
               <div>
                 <p className="text-2xl font-bold text-foreground">{kpi.value}</p>
                 <p className="text-xs text-muted-foreground font-medium">{kpi.label}</p>
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -164,18 +249,20 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  {["Client", "Project", "Type", "Manager", "Resources", "Progress", "Status", "Invoice"].map((h) => (
+                  {["Client", "Project", "Type", "Manager", "Resources", "Progress", "Status", "Revenue", "Invoice"].map((h) => (
                     <th key={h} className="px-4 py-2.5 font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {projects?.map((p) => {
+                {filteredProjects.map((p) => {
                   const client = clients?.find((c) => c.id === p.client_id);
                   const prog = getProjectMilestoneProgress(p.id);
                   const pctWidth = prog.total ? (prog.done / prog.total) * 100 : 0;
                   const pMs = milestones?.filter((m) => m.project_id === p.id) || [];
                   const hasRaisedInvoice = pMs.some((m) => m.invoice_status === "Raised");
+                  const raisedInvoices = pMs.filter((m) => m.invoice_status === "Raised").length;
+                  const pendingInvoices = pMs.filter((m) => m.invoice_status === "Pending").length;
                   return (
                     <tr
                       key={p.id}
@@ -196,6 +283,13 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         </div>
                       </td>
                       <td className="px-4 py-2.5"><span className={statusBadge(p.status)}>{p.status}</span></td>
+                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
+                        <span className="font-medium text-foreground">{raisedInvoices}</span>
+                        <span className="text-muted-foreground">/{pMs.length || 0} raised</span>
+                        {pendingInvoices > 0 && (
+                          <span className="ml-1 text-warning">({pendingInvoices} pending)</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5">
                         <span className={`inline-block h-2 w-2 rounded-full ${hasRaisedInvoice ? "bg-success" : "bg-muted-foreground"}`} />
                       </td>
@@ -263,21 +357,124 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 </div>
               </div>
             </div>
-            <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Upcoming Deadlines</h4>
+            <h4 className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Upcoming Invoices This Month</h4>
             <div className="space-y-1.5">
-              {upcomingDeadlines.map((m) => {
+              {upcomingInvoicesThisMonth.map((m) => {
                 const proj = projects?.find((p) => p.id === m.project_id);
                 return (
-                  <div key={m.id} className="flex items-center justify-between text-xs">
-                    <span className="text-foreground truncate max-w-[140px]">{proj?.name} · {m.milestone_code}</span>
-                    <span className="text-muted-foreground">{m.planned_end}</span>
+                  <div key={m.id} className="flex items-start justify-between gap-3 text-xs">
+                    <span className="text-foreground whitespace-normal break-words leading-5">{proj?.name} · {m.milestone_code}</span>
+                    <span className="text-muted-foreground">{m.planned_start || m.planned_end}</span>
                   </div>
                 );
               })}
+              {upcomingInvoicesThisMonth.length === 0 && (
+                <p className="text-xs text-muted-foreground">No upcoming pending invoices this month.</p>
+              )}
             </div>
           </div>
         </div>
       </div>
+
+      {activeTile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
+          onClick={() => setActiveTile(null)}
+        >
+          <div
+            className="w-full max-w-4xl rounded-lg border border-border bg-card shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-bold text-foreground">
+                {activeTile === "done" && "Milestones Done - Details"}
+                {activeTile === "amber" && "In Progress (Amber) - Details"}
+                {activeTile === "red" && "Critical / Red - Details"}
+                {activeTile === "invoices" && "Invoices Raised - Details"}
+                {activeTile === "invoicesPending" && "Invoices Pending - Details"}
+                {activeTile === "team" && "Team Deployed - Details"}
+              </h3>
+              <button onClick={() => setActiveTile(null)} className="text-muted-foreground hover:text-foreground">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {activeTile !== "team" && (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      <th className="px-2 py-2 font-medium">Client</th>
+                      <th className="px-2 py-2 font-medium">Project</th>
+                      <th className="px-2 py-2 font-medium">Milestone</th>
+                      <th className="px-2 py-2 font-medium">Status</th>
+                      <th className="px-2 py-2 font-medium">Progress</th>
+                      <th className="px-2 py-2 font-medium">Invoice</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(activeTile === "invoicesPending" ? invoicePendingRows :
+                      activeTile === "done" ? milestonesDone :
+                      activeTile === "amber" ? milestonesAmber :
+                      activeTile === "red" ? milestonesRed : invoiceRaisedRows).map((m) => (
+                      <tr key={m.id} className="border-b border-border last:border-0">
+                        <td className="px-2 py-2 text-muted-foreground">{getClientName(m.project_id)}</td>
+                        <td className="px-2 py-2 text-foreground">{getProjectName(m.project_id)}</td>
+                        <td className="px-2 py-2 text-foreground">{m.milestone_code || "-"} · {m.description || "-"}</td>
+                        <td className="px-2 py-2 text-muted-foreground">{m.status || "-"}</td>
+                        <td className="px-2 py-2 text-muted-foreground">{m.completion_pct ?? 0}%</td>
+                        <td className="px-2 py-2 text-muted-foreground">{m.invoice_status || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {activeTile === "team" && (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-left text-muted-foreground">
+                      <th className="px-2 py-2 font-medium">Member</th>
+                      <th className="px-2 py-2 font-medium">Role</th>
+                      <th className="px-2 py-2 font-medium">Engagement</th>
+                      <th className="px-2 py-2 font-medium">Projects Assigned</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deployedMembers.map((m) => (
+                      <tr key={m.id} className="border-b border-border last:border-0">
+                        <td className="px-2 py-2 text-foreground">{m.name}</td>
+                        <td className="px-2 py-2 text-muted-foreground">{m.role}</td>
+                        <td className="px-2 py-2 text-muted-foreground">{m.engagement_pct ?? 0}%</td>
+                        <td className="px-2 py-2 text-muted-foreground">{getMemberProjectCount(m.id)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {(activeTile === "done" && milestonesDone.length === 0) && (
+                <p className="text-xs text-muted-foreground">No completed milestones.</p>
+              )}
+              {(activeTile === "amber" && milestonesAmber.length === 0) && (
+                <p className="text-xs text-muted-foreground">No amber milestones.</p>
+              )}
+              {(activeTile === "red" && milestonesRed.length === 0) && (
+                <p className="text-xs text-muted-foreground">No critical milestones.</p>
+              )}
+              {(activeTile === "invoices" && invoiceRaisedRows.length === 0) && (
+                <p className="text-xs text-muted-foreground">No raised invoices.</p>
+              )}
+              {(activeTile === "invoicesPending" && invoicePendingRows.length === 0) && (
+                <p className="text-xs text-muted-foreground">No pending invoices.</p>
+              )}
+              {(activeTile === "team" && deployedMembers.length === 0) && (
+                <p className="text-xs text-muted-foreground">No deployed team members.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 };

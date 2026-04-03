@@ -28,6 +28,9 @@ export type ProjectAssignment = {
   role_on_project: string | null; allocated_hours_per_week: number | null;
   start_date: string | null; end_date: string | null;
 };
+export type ProjectUpdate = {
+  id: string; project_id: string; content: string; activity_date: string; created_at: string;
+};
 
 export const useClients = () =>
   useQuery({ queryKey: ["clients"], queryFn: async () => {
@@ -75,4 +78,11 @@ export const useAuditLog = () =>
     const { data, error } = await supabase.from("audit_log").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     return data as AuditEntry[];
+  }});
+
+export const useProjectUpdates = () =>
+  useQuery({ queryKey: ["project_updates"], queryFn: async () => {
+    const { data, error } = await supabase.from("project_updates").select("*").order("activity_date", { ascending: true });
+    if (error) throw error;
+    return data as ProjectUpdate[];
   }});

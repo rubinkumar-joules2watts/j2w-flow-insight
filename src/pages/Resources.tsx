@@ -5,7 +5,7 @@ import { useProjects, useTeamMembers, useAssignments, useClients } from "@/hooks
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check } from "lucide-react";
+import { Plus, X, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
@@ -18,6 +18,19 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
   const [showAddMember, setShowAddMember] = useState(false);
   const [editMember, setEditMember] = useState<string | null>(null);
   const [confirmToggle, setConfirmToggle] = useState<{ memberId: string; projectId: string } | null>(null);
+  const [confirmDeleteMember, setConfirmDeleteMember] = useState<string | null>(null);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [memberRoleFilter, setMemberRoleFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+
+  const filteredMembers = (members || []).filter((m) => {
+    const bySearch = !memberSearch.trim() || m.name.toLowerCase().includes(memberSearch.toLowerCase().trim());
+    const byRole = memberRoleFilter === "all" || (m.role || "") === memberRoleFilter;
+    const byProject = projectFilter === "all" || (assignments || []).some((a) => a.team_member_id === m.id && a.project_id === projectFilter);
+    return bySearch && byRole && byProject;
+  });
+
+  const filteredProjects = projectFilter === "all" ? (projects || []) : (projects || []).filter((p) => p.id === projectFilter);
 
   useEffect(() => {
     const channel = supabase.channel("resources-realtime")
@@ -80,8 +93,38 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
     setConfirmToggle(null);
   };
 
+  const handleDeleteMember = async (memberId: string) => {
+    const member = members?.find((m) => m.id === memberId);
+    if (!member) return;
+
+    const memberAssignments = assignments?.filter((a) => a.team_member_id === memberId) || [];
+    for (const a of memberAssignments) {
+      const { error } = await supabase.from("project_assignments").delete().eq("id", a.id);
+      if (error) {
+        toast.error("Failed to delete assignments for member");
+        return;
+      }
+      await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+    }
+
+    const { error } = await supabase.from("team_members").delete().eq("id", memberId);
+    if (error) {
+      toast.error("Failed to delete member");
+      return;
+    }
+    await writeAuditLog("team_members", memberId, "DELETE", member as any, null);
+
+    qc.invalidateQueries({ queryKey: ["team_members"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
+    toast.success(`✓ Member deleted · ${new Date().toLocaleTimeString()}`);
+    setConfirmDeleteMember(null);
+    if (editMember === memberId) {
+      setEditMember(null);
+    }
+  };
+
   // Effort data
-  const effortData = members?.map((m) => {
+  const effortData = filteredMembers.map((m) => {
     const totalHours = assignments?.filter((a) => a.team_member_id === m.id).reduce((s, a) => s + (a.allocated_hours_per_week || 8), 0) || 0;
     return { name: m.name, hours: totalHours, color: m.color_hex || "#666" };
   }).filter((d) => d.hours > 0) || [];
@@ -93,6 +136,35 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
     <AppLayout>
       <Topbar title="Resource Allocation" themeToggle={themeToggle} />
       <div className="p-6 space-y-5 animate-fade-in">
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
+          <input
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+            placeholder="Search Member"
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          />
+          <select
+            value={memberRoleFilter}
+            onChange={(e) => setMemberRoleFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Roles</option>
+            {Array.from(new Set((members || []).map((m) => m.role).filter(Boolean))).map((role) => (
+              <option key={role} value={role}>{role}</option>
+            ))}
+          </select>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Projects</option>
+            {(projects || []).map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
         {/* Team Overview */}
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-bold text-foreground">Team Overview</h3>
@@ -101,7 +173,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
           </button>
         </div>
         <div className="grid grid-cols-4 gap-3">
-          {members?.map((m) => {
+          {filteredMembers.map((m) => {
             const memberProjects = getProjectsForMember(m.id);
             return (
               <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-border bg-card p-4 hover:border-primary/30 transition-colors">
@@ -128,6 +200,19 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
                     <span key={p} className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{p}</span>
                   ))}
                 </div>
+                <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                  {confirmDeleteMember === m.id ? (
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <span className="text-destructive">Delete?</span>
+                      <button onClick={() => handleDeleteMember(m.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
+                      <button onClick={() => setConfirmDeleteMember(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete Member">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -151,10 +236,10 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
                 </tr>
               </thead>
               <tbody>
-                {members?.map((m) => (
+                {filteredMembers.map((m) => (
                   <tr key={m.id} className="border-b border-border last:border-0">
                     <td className="px-3 py-2 text-foreground font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{m.name}</td>
-                    {projects?.map((p) => {
+                    {filteredProjects.map((p) => {
                       const isAssigned = assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id);
                       const isConfirming = confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id;
                       return (
@@ -211,7 +296,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
                 </tr>
               </thead>
               <tbody>
-                {members?.map((m) => {
+                {filteredMembers.map((m) => {
                   const memberAssigns = assignments?.filter((a) => a.team_member_id === m.id) || [];
                   return (
                     <tr key={m.id} className="border-b border-border last:border-0">
@@ -224,7 +309,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
                           return mi >= start && mi <= end;
                         });
                         if (!activeProject) return <td key={mi} className="px-2 py-2" />;
-                        const proj = projects?.find((p) => p.id === activeProject.project_id);
+                        const proj = filteredProjects.find((p) => p.id === activeProject.project_id) || projects?.find((p) => p.id === activeProject.project_id);
                         return (
                           <td key={mi} className="px-1 py-2">
                             <div className="rounded px-1 py-0.5 text-[9px] font-medium text-center truncate" style={{ backgroundColor: m.color_hex ? `${m.color_hex}33` : "#66666633", color: m.color_hex || "#666" }}>

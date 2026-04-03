@@ -1,3 +1,3 @@
-# Welcome to your Lovable project
+# Delivery Tracker
 
-TODO: Document your project here
+Internal delivery tracking dashboard.

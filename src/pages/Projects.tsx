@@ -2,12 +2,39 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates } from "@/hooks/useData";
 import { supabase } from "@/integrations/supabase/client";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, AlertTriangle, History } from "lucide-react";
+import { Plus, X, Check, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+
+const formatDateReadable = (value: string | null | undefined) => {
+  if (!value) return "-";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return value;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(y, mo - 1, d);
+  if (Number.isNaN(dt.getTime())) return value;
+  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+};
+
+const clampProgress = (value: unknown) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, Math.round(n)));
+};
+
+const deriveInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "TM";
 
 const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
   const [searchParams] = useSearchParams();
@@ -19,12 +46,14 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const { data: members } = useTeamMembers();
   const { data: assignments } = useAssignments();
   const { data: auditLog } = useAuditLog();
+  const { data: allUpdates } = useProjectUpdates();
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
   const client = clients?.find((c) => c.id === project?.client_id);
   const projMilestones = milestones?.filter((m) => m.project_id === selectedId) || [];
   const projAssignments = assignments?.filter((a) => a.project_id === selectedId) || [];
+  const projUpdates = allUpdates?.filter((u) => u.project_id === selectedId) || [];
   const assignedMembers = members?.filter((m) => projAssignments.some((a) => a.team_member_id === m.id)) || [];
   const unassignedMembers = members?.filter((m) => !projAssignments.some((a) => a.team_member_id === m.id)) || [];
 
@@ -55,8 +84,39 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const [showAddMilestone, setShowAddMilestone] = useState(false);
   const [showAssignMember, setShowAssignMember] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [confirmDeleteMilestone, setConfirmDeleteMilestone] = useState<string | null>(null);
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState<string | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
+  const [projectClientFilter, setProjectClientFilter] = useState("all");
+  const [projectStatusFilter, setProjectStatusFilter] = useState("all");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [milestoneStatusFilter, setMilestoneStatusFilter] = useState("all");
+  const [milestoneSearch, setMilestoneSearch] = useState("");
+  const [showAddHierarchyMember, setShowAddHierarchyMember] = useState(false);
+  const [newUpdate, setNewUpdate] = useState("");
+  const [updateDate, setUpdateDate] = useState(new Date().toISOString().split("T")[0]);
+  const [isAddingUpdate, setIsAddingUpdate] = useState(false);
+  const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
+  const [newHierarchyMember, setNewHierarchyMember] = useState({
+    name: "",
+    role: "Developer",
+    reportsTo: "",
+    memberType: "Internal",
+  });
   const saveTimerRef = useRef<number>();
+
+  const filteredProjects = (projects || []).filter((p) => {
+    const byClient = projectClientFilter === "all" || p.client_id === projectClientFilter;
+    const byStatus = projectStatusFilter === "all" || (p.status || "") === projectStatusFilter;
+    const bySearch = !projectSearch.trim() || p.name.toLowerCase().includes(projectSearch.toLowerCase().trim());
+    return byClient && byStatus && bySearch;
+  });
+
+  const filteredProjMilestones = projMilestones.filter((m) => {
+    const byStatus = milestoneStatusFilter === "all" || (m.status || "") === milestoneStatusFilter;
+    const bySearch = !milestoneSearch.trim() || `${m.milestone_code || ""} ${m.description || ""}`.toLowerCase().includes(milestoneSearch.toLowerCase().trim());
+    return byStatus && bySearch;
+  });
 
   // Realtime subscription
   useEffect(() => {
@@ -64,6 +124,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_updates" }, () => qc.invalidateQueries({ queryKey: ["project_updates"] }))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [qc]);
@@ -75,13 +136,59 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   };
 
   const updateMilestone = useCallback(async (id: string, field: string, value: unknown, oldVal: unknown) => {
-    const { error } = await supabase.from("milestones").update({ [field]: value } as any).eq("id", id);
+    const current = milestones?.find((m) => m.id === id);
+    if (!current) return;
+
+    const next: Record<string, unknown> = { [field]: value };
+
+    if (field === "completion_pct") {
+      const pct = clampProgress(value);
+      next.completion_pct = pct;
+      if (pct === 100) {
+        next.status = "Completed";
+        next.blocker = false;
+      } else if ((current.status || "") === "Completed") {
+        next.status = "On Track";
+      }
+    }
+
+    if (field === "status") {
+      const status = String(value || "");
+      next.status = status;
+      if (status === "Completed") {
+        next.completion_pct = 100;
+        next.blocker = false;
+      } else if (clampProgress(current.completion_pct) === 100) {
+        next.completion_pct = 99;
+      }
+    }
+
+    if (field === "blocker") {
+      const blocker = Boolean(value);
+      next.blocker = blocker;
+      if (blocker && (current.status || "") === "On Track") {
+        next.status = "Delayed";
+      }
+      if (blocker && (current.status || "") === "Completed") {
+        next.status = "Delayed";
+        next.completion_pct = 99;
+      }
+    }
+
+    const { error } = await supabase.from("milestones").update(next as any).eq("id", id);
     if (error) { toast.error("Failed to update"); return; }
-    await writeAuditLog("milestones", id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
+
+    const changedFields = Object.keys(next);
+    const oldValues = changedFields.reduce((acc, key) => {
+      acc[key] = (current as Record<string, unknown>)[key] ?? null;
+      return acc;
+    }, {} as Record<string, unknown>);
+
+    await writeAuditLog("milestones", id, "UPDATE", oldValues, next, changedFields);
     qc.invalidateQueries({ queryKey: ["milestones"] });
-    toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
+    toast.success(`✓ Updated ${changedFields.join(", ")} · ${new Date().toLocaleTimeString()}`);
     showSaved(`${id}-${field}`);
-  }, [qc]);
+  }, [qc, milestones]);
 
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
@@ -161,6 +268,259 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     setConfirmRemove(null);
   };
 
+  const resolveReportsToId = (reportsTo: string | null) => {
+    if (!reportsTo) return null;
+    const byId = assignedMembers.find((m) => m.id === reportsTo);
+    if (byId) return byId.id;
+    const byName = assignedMembers.find((m) => m.name.toLowerCase() === reportsTo.toLowerCase());
+    return byName?.id || null;
+  };
+
+  const updateMemberField = useCallback(async (memberId: string, field: "role" | "reports_to", value: string | null, oldVal: unknown) => {
+    const { error } = await supabase.from("team_members").update({ [field]: value } as any).eq("id", memberId);
+    if (error) { toast.error("Failed to update member"); return; }
+    await writeAuditLog("team_members", memberId, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
+    qc.invalidateQueries({ queryKey: ["team_members"] });
+    qc.invalidateQueries({ queryKey: ["audit_log"] });
+    toast.success(`✓ Updated ${field.replace("_", " ")} · ${new Date().toLocaleTimeString()}`);
+    showSaved(`${memberId}-${field}`);
+  }, [qc]);
+
+  const handleAddHierarchyMember = async () => {
+    if (!project) return;
+    if (!newHierarchyMember.name.trim()) {
+      toast.error("Member name is required");
+      return;
+    }
+
+    const payload = {
+      name: newHierarchyMember.name.trim(),
+      initials: deriveInitials(newHierarchyMember.name),
+      role: newHierarchyMember.role.trim() || "Developer",
+      reports_to: newHierarchyMember.reportsTo || null,
+      member_type: newHierarchyMember.memberType || "Internal",
+      engagement_pct: 100,
+      color_hex: "#0EA5A6",
+      is_active: true,
+    };
+
+    const { data: member, error: memberError } = await supabase.from("team_members").insert(payload as any).select().single();
+    if (memberError || !member) {
+      toast.error("Failed to add person");
+      return;
+    }
+
+    const { data: assignment, error: assignmentError } = await supabase
+      .from("project_assignments")
+      .insert({ project_id: project.id, team_member_id: member.id } as any)
+      .select()
+      .single();
+
+    if (assignmentError) {
+      toast.error("Added person but failed to assign to project");
+      return;
+    }
+
+    await writeAuditLog("team_members", member.id, "INSERT", null, member);
+    await writeAuditLog("project_assignments", assignment.id, "INSERT", null, assignment);
+
+    qc.invalidateQueries({ queryKey: ["team_members"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
+    qc.invalidateQueries({ queryKey: ["audit_log"] });
+
+    setShowAddHierarchyMember(false);
+    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", memberType: "Internal" });
+    toast.success(`✓ Added ${payload.name} to hierarchy · ${new Date().toLocaleTimeString()}`);
+  };
+
+  const handleAddUpdate = async () => {
+    if (!newUpdate.trim() || !project) return;
+    setIsAddingUpdate(true);
+    const { error } = await supabase.from("project_updates").insert({
+      project_id: project.id,
+      content: newUpdate.trim(),
+      activity_date: updateDate,
+    });
+
+    if (error) {
+      toast.error("Failed to add update");
+    } else {
+      setNewUpdate("");
+      setUpdateDate(new Date().toISOString().split("T")[0]);
+      qc.invalidateQueries({ queryKey: ["project_updates"] });
+      toast.success("Timeline updated");
+    }
+    setIsAddingUpdate(false);
+  };
+
+  const hierarchyChildrenByManager = assignedMembers.reduce((acc, member) => {
+    const managerId = resolveReportsToId(member.reports_to);
+    const key = managerId || "__root__";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(member);
+    return acc;
+  }, {} as Record<string, typeof assignedMembers>);
+
+  const renderHierarchyNode = (
+    memberId: string,
+    path: Set<string> = new Set(),
+    isFirst = true,
+    isLast = true,
+    hasParent = false,
+    level = 0
+  ) => {
+    const member = assignedMembers.find((m) => m.id === memberId);
+    if (!member) return null;
+    if (path.has(memberId)) return null;
+
+    const nextPath = new Set(path);
+    nextPath.add(memberId);
+    const children = hierarchyChildrenByManager[memberId] || [];
+
+    return (
+      <div key={member.id} className="flex flex-col items-center relative">
+        {/* Top connector for non-root nodes */}
+        {hasParent && (
+          <div className="flex flex-col items-center w-full">
+             {/* The bridge segment from the sibling group */}
+             <div className="relative w-full h-4">
+                {/* Horizontal line */}
+                {!(isFirst && isLast) && (
+                  <div className={`absolute top-0 h-px bg-border/60 ${
+                    isFirst ? "left-1/2 right-0" : 
+                    isLast ? "left-0 right-1/2" : 
+                    "left-0 right-0"
+                  }`} />
+                )}
+                {/* Vertical line into the card */}
+                <div className="absolute left-1/2 top-0 -translate-x-1/2 h-full w-px bg-border/60" />
+             </div>
+          </div>
+        )}
+
+        {/* Node Card */}
+        <div 
+          className={`group flex flex-col items-center gap-2 rounded-xl border p-3 transition-all duration-300 shadow-sm relative z-10 ${
+            level === 0 
+              ? "bg-primary/5 border-primary/20 shadow-primary/5 min-w-[200px]" 
+              : "bg-card border-border/60 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 min-w-[180px]"
+          }`}
+        >
+          <div 
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner" 
+            style={{ 
+              backgroundColor: member.color_hex || "#666", 
+              color: "#fff",
+              boxShadow: `0 0 0 2px ${member.color_hex}44` 
+            }}
+          >
+            {member.initials || deriveInitials(member.name)}
+          </div>
+          <div className="text-center min-w-0">
+            <p className={`text-xs font-bold truncate ${level === 0 ? "text-primary" : "text-foreground"}`}>
+              {member.name}
+            </p>
+            <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
+              {member.role || "No role"}
+            </p>
+            {member.member_type === "External" && (
+                <span className="mt-1 inline-block text-[8px] bg-accent/10 text-accent px-1 rounded-sm border border-accent/20 font-bold uppercase tracking-tighter">EXT</span>
+            )}
+          </div>
+          {children.length > 0 && (
+            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[8px] text-primary-foreground border-2 border-card font-extrabold shadow-sm">
+              {children.length}
+            </div>
+          )}
+        </div>
+
+        {/* Children Row */}
+        {children.length > 0 && (
+          <div className="flex flex-col items-center">
+            {/* Vertical line down to children group */}
+            <div className="h-4 w-px bg-border/60" />
+            
+            <div className="flex items-start gap-8">
+              {children.map((child, idx) =>
+                renderHierarchyNode(
+                  child.id,
+                  nextPath,
+                  idx === 0,
+                  idx === children.length - 1,
+                  true,
+                  level + 1
+                )
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const handleDeleteMilestone = async (milestoneId: string) => {
+    const ms = milestones?.find((m) => m.id === milestoneId);
+    if (!ms) return;
+    const { error } = await supabase.from("milestones").delete().eq("id", milestoneId);
+    if (error) {
+      toast.error("Failed to delete milestone");
+      return;
+    }
+    await writeAuditLog("milestones", milestoneId, "DELETE", ms, null);
+    qc.invalidateQueries({ queryKey: ["milestones"] });
+    qc.invalidateQueries({ queryKey: ["audit_log"] });
+    toast.success(`✓ Milestone deleted · ${new Date().toLocaleTimeString()}`);
+    setConfirmDeleteMilestone(null);
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    const proj = projects?.find((p) => p.id === projectId);
+    if (!proj) return;
+
+    const relatedMilestones = milestones?.filter((m) => m.project_id === projectId) || [];
+    const relatedAssignments = assignments?.filter((a) => a.project_id === projectId) || [];
+
+    for (const ms of relatedMilestones) {
+      const { error } = await supabase.from("milestones").delete().eq("id", ms.id);
+      if (error) {
+        toast.error("Failed to delete related milestones");
+        return;
+      }
+      await writeAuditLog("milestones", ms.id, "DELETE", ms, null);
+    }
+
+    for (const a of relatedAssignments) {
+      const { error } = await supabase.from("project_assignments").delete().eq("id", a.id);
+      if (error) {
+        toast.error("Failed to delete related assignments");
+        return;
+      }
+      await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+    }
+
+    const { error } = await supabase.from("projects").delete().eq("id", projectId);
+    if (error) {
+      toast.error("Failed to delete project");
+      return;
+    }
+    await writeAuditLog("projects", projectId, "DELETE", proj, null);
+
+    const remaining = (projects || []).filter((p) => p.id !== projectId);
+    qc.invalidateQueries({ queryKey: ["projects"] });
+    qc.invalidateQueries({ queryKey: ["milestones"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
+    qc.invalidateQueries({ queryKey: ["audit_log"] });
+
+    if (remaining[0]?.id) {
+      navigate(`/projects?id=${remaining[0].id}`);
+    } else {
+      navigate(`/projects`);
+    }
+
+    toast.success(`✓ Project deleted · ${new Date().toLocaleTimeString()}`);
+    setConfirmDeleteProject(null);
+  };
+
   const doneMilestones = projMilestones.filter((m) => m.completion_pct === 100).length;
 
   return (
@@ -169,7 +529,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Project Selector */}
         <div className="flex items-center gap-2 overflow-x-auto pb-2">
-          {projects?.map((p) => {
+          {filteredProjects.map((p) => {
             const cl = clients?.find((c) => c.id === p.client_id);
             return (
               <button
@@ -190,12 +550,54 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
           </button>
         </div>
 
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
+          <select
+            value={projectClientFilter}
+            onChange={(e) => setProjectClientFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Clients</option>
+            {(clients || []).map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <select
+            value={projectStatusFilter}
+            onChange={(e) => setProjectStatusFilter(e.target.value)}
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          >
+            <option value="all">All Project Status</option>
+            {["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <input
+            value={projectSearch}
+            onChange={(e) => setProjectSearch(e.target.value)}
+            placeholder="Search Project"
+            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+          />
+        </div>
+
         {project && (
           <>
             {/* Project Header */}
             <div className="flex items-start justify-between rounded-lg border border-border bg-card p-5">
               <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-bold text-foreground">{client?.name} · {project.name}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-foreground">{client?.name} · {project.name}</h2>
+                  {confirmDeleteProject === project.id ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-destructive">Delete project?</span>
+                      <button onClick={() => handleDeleteProject(project.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
+                      <button onClick={() => setConfirmDeleteProject(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete Project">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
                   <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
@@ -216,34 +618,144 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 ].map((s) => (
                   <div key={s.label}>
                     <p className="text-xl font-bold text-foreground">{s.value}</p>
-                    <p className="text-[10px] text-muted-foreground font-medium">{s.label}</p>
+                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{s.label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
+            {/* Timeline Typebar */}
+            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <MessageSquare size={20} />
+                </div>
+                <div className="flex-1 flex gap-2">
+                  <input
+                    type="date"
+                    value={updateDate}
+                    onChange={(e) => setUpdateDate(e.target.value)}
+                    className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background h-[42px]"
+                    disabled={isAddingUpdate}
+                  />
+                  <div className="relative flex-1">
+                    <input
+                      value={newUpdate}
+                      onChange={(e) => setNewUpdate(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleAddUpdate()}
+                      placeholder="Type project update or activity detail here... (e.g. SOW Signed)"
+                      className="w-full rounded-lg border border-border bg-secondary/30 px-4 py-2.5 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/10 h-[42px]"
+                      disabled={isAddingUpdate}
+                    />
+                    <button
+                      onClick={handleAddUpdate}
+                      disabled={isAddingUpdate || !newUpdate.trim()}
+                      className="absolute right-2 top-1.5 flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Timeline Feed */}
+            {projUpdates.length > 0 && (
+              <div className="relative">
+                <div className="flex items-start gap-2 overflow-x-auto pb-4 no-scrollbar">
+                  <button 
+                    onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+                    className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-widest vertical-text hover:bg-secondary/50 transition-all group"
+                  >
+                    <div className="flex items-center gap-1.5 transform -rotate-90 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                       {isTimelineCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                    </div>
+                    Timeline
+                  </button>
+                  
+                  {isTimelineCollapsed ? (
+                    <div className="flex flex-1 items-center gap-3 py-1 cursor-pointer" onClick={() => setIsTimelineCollapsed(false)}>
+                       <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-[11px] font-bold text-muted-foreground shadow-sm hover:border-primary/40 transition-all">
+                         <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                         {projUpdates.length} update{projUpdates.length !== 1 ? 's' : ''} in timeline
+                         <ChevronRight size={10} className="ml-1" />
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 min-h-[80px]">
+                      {[...projUpdates].reverse().map((u, idx) => (
+                        <div 
+                          key={u.id} 
+                          className="group relative flex min-w-[200px] max-w-[240px] flex-col rounded-xl border border-border/60 bg-card p-3 shadow-sm transition-all hover:border-primary/40 hover:shadow-md animate-in fade-in slide-in-from-left-2 duration-300"
+                        >
+                          <div className="mb-2 flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary">
+                              <Calendar size={10} />
+                              {new Date(u.activity_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                            </div>
+                            <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
+                              Manual
+                            </span>
+                          </div>
+                          <p className="text-xs text-foreground line-clamp-3 leading-relaxed">
+                            {u.content}
+                          </p>
+                          {idx !== 0 && (
+                             <div className="absolute -left-3 top-1/2 h-[1px] w-3 bg-border group-hover:bg-primary/20" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Milestone Tracker */}
             <div className="rounded-lg border border-border bg-card">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <h3 className="text-sm font-bold text-foreground">Milestone Tracker</h3>
-                <button onClick={() => setShowAddMilestone(true)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-                  <Plus size={14} /> Add Milestone
-                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={milestoneStatusFilter}
+                    onChange={(e) => setMilestoneStatusFilter(e.target.value)}
+                    className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                  >
+                    <option value="all">All Status</option>
+                    {["Completed", "On Track", "Delayed", "On Hold", "Pending", "Upcoming"].map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={milestoneSearch}
+                    onChange={(e) => setMilestoneSearch(e.target.value)}
+                    placeholder="Search Milestone"
+                    className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                  />
+                  <button onClick={() => setShowAddMilestone(true)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
+                    <Plus size={14} /> Add Milestone
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border text-left text-muted-foreground">
-                      {["ID", "Description", "Planned", "Actual/ETA", "Progress", "Status", "Blocker", "Invoice", "Remarks"].map((h) => (
-                        <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                      {["ID", "Description", "Planned", "Actual/ETA", "Progress", "Status", "Blocker", "Invoice", "Remarks", "Delete"].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-3 py-2 font-medium ${h === "Remarks" ? "min-w-[280px]" : "whitespace-nowrap"}`}
+                        >
+                          {h}
+                        </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {projMilestones.length === 0 && (
-                      <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
+                    {filteredProjMilestones.length === 0 && (
+                      <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
                     )}
-                    {projMilestones.map((m) => (
+                    {filteredProjMilestones.map((m) => (
                       <tr key={m.id} className="border-b border-border last:border-0">
                         <td className="px-3 py-2 font-medium text-foreground">
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
@@ -253,29 +765,28 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         </td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                           <div className="flex items-center gap-1">
-                            <input type="date" value={m.planned_start || ""} onChange={(e) => updateMilestone(m.id, "planned_start", e.target.value || null, m.planned_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <InlineDateEdit value={m.planned_start} onSave={(v) => updateMilestone(m.id, "planned_start", v || null, m.planned_start)} savedKey={savedField === `${m.id}-planned_start`} />
                             <span>→</span>
-                            <input type="date" value={m.planned_end || ""} onChange={(e) => updateMilestone(m.id, "planned_end", e.target.value || null, m.planned_end)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <InlineDateEdit value={m.planned_end} onSave={(v) => updateMilestone(m.id, "planned_end", v || null, m.planned_end)} savedKey={savedField === `${m.id}-planned_end`} />
                           </div>
                         </td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                           <div className="flex items-center gap-1">
-                            <input type="date" value={m.actual_start || ""} onChange={(e) => updateMilestone(m.id, "actual_start", e.target.value || null, m.actual_start)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <InlineDateEdit value={m.actual_start} onSave={(v) => updateMilestone(m.id, "actual_start", v || null, m.actual_start)} savedKey={savedField === `${m.id}-actual_start`} />
                             <span>→</span>
-                            <input type="date" value={m.actual_end_eta || ""} onChange={(e) => updateMilestone(m.id, "actual_end_eta", e.target.value || null, m.actual_end_eta)} className="bg-transparent text-xs outline-none w-[100px] text-muted-foreground" />
+                            <InlineDateEdit value={m.actual_end_eta} onSave={(v) => updateMilestone(m.id, "actual_end_eta", v || null, m.actual_end_eta)} savedKey={savedField === `${m.id}-actual_end_eta`} />
                           </div>
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-16 rounded-full bg-secondary">
-                              <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${m.completion_pct}%` }} />
+                              <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${clampProgress(m.completion_pct)}%` }} />
                             </div>
-                            <input
-                              type="number" min={0} max={100} value={m.completion_pct ?? 0}
-                              onChange={(e) => updateMilestone(m.id, "completion_pct", Number(e.target.value), m.completion_pct)}
-                              className="w-10 bg-transparent text-xs text-muted-foreground outline-none text-right"
+                            <InlinePercentEdit
+                              value={m.completion_pct ?? 0}
+                              onSave={(val) => updateMilestone(m.id, "completion_pct", val, m.completion_pct)}
+                              savedKey={savedField === `${m.id}-completion_pct`}
                             />
-                            <span className="text-muted-foreground text-xs">%</span>
                           </div>
                         </td>
                         <td className="px-3 py-2">
@@ -293,7 +804,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                           </div>
                         </td>
                         <td className="px-3 py-2">
-                          <button
+                            <button
                             onClick={() => updateMilestone(m.id, "blocker", !m.blocker, m.blocker)}
                             className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${m.blocker ? "bg-destructive/15 text-destructive" : "bg-secondary text-muted-foreground"}`}
                           >
@@ -310,12 +821,25 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                             <option value="Pending">Pending</option>
                           </select>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 align-top min-w-[280px] max-w-[420px] whitespace-normal break-words">
                           <InlineEdit
                             value={m.remarks || ""}
                             onSave={(val) => updateMilestone(m.id, "remarks", val, m.remarks)}
                             savedKey={savedField === `${m.id}-remarks`}
+                            multiline
                           />
+                        </td>
+                        <td className="px-3 py-2">
+                          {confirmDeleteMilestone === m.id ? (
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleDeleteMilestone(m.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
+                              <button onClick={() => setConfirmDeleteMilestone(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <button onClick={() => setConfirmDeleteMilestone(m.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete Milestone">
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -328,20 +852,25 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-foreground">Resources Deployed</h3>
-                <div className="relative">
-                  <button onClick={() => setShowAssignMember(!showAssignMember)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-                    <Plus size={14} /> Add Team Member
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setShowAddHierarchyMember(true)} className="flex items-center gap-1 rounded-md bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/25 transition-colors">
+                    <Plus size={14} /> Add Person
                   </button>
-                  {showAssignMember && (
-                    <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                      {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">All members assigned</p>}
-                      {unassignedMembers.map((m) => (
-                        <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-1.5 text-xs text-foreground hover:bg-secondary transition-colors">
-                          {m.name} · {m.role}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="relative">
+                    <button onClick={() => setShowAssignMember(!showAssignMember)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
+                      <Plus size={14} /> Add Team Member
+                    </button>
+                    {showAssignMember && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-border bg-popover p-1 shadow-lg">
+                        {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">All members assigned</p>}
+                        {unassignedMembers.map((m) => (
+                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-1.5 text-xs text-foreground hover:bg-secondary transition-colors">
+                            {m.name} · {m.role}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               {assignedMembers.length === 0 && <p className="text-xs text-muted-foreground">No resources assigned</p>}
@@ -367,6 +896,69 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                   </div>
                 ))}
               </div>
+
+              {assignedMembers.length > 0 && (
+                <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-6">
+                  <div className="rounded-xl border border-border/50 bg-secondary/10 p-5 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Hierarchy Tree</h4>
+                      <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Visual Flow</span>
+                    </div>
+                    <div className="overflow-x-auto pb-6 no-scrollbar min-h-[400px]">
+                      <div className="flex flex-col items-center justify-start min-w-max p-4">
+                        {(hierarchyChildrenByManager.__root__ || []).map((root, idx, arr) => 
+                          renderHierarchyNode(root.id, new Set(), idx === 0, idx === arr.length - 1, false, 0)
+                        )}
+                        {(hierarchyChildrenByManager.__root__ || []).length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12 text-center w-full">
+                            <div className="rounded-full bg-secondary p-3 mb-2">
+                               <AlertTriangle size={20} className="text-muted-foreground" />
+                            </div>
+                            <p className="text-xs text-muted-foreground max-w-[180px]">No root members found. Set at least one person with no manager in Hierarchy Settings.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-border/50 bg-card p-5 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Management Setup</h4>
+                      <span className="text-[10px] bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-bold">Config</span>
+                    </div>
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                      {assignedMembers.map((m) => {
+                        const reportsToId = resolveReportsToId(m.reports_to) || "";
+                        return (
+                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-foreground truncate">{m.name}</p>
+                            </div>
+                            <InlineEdit
+                              value={m.role || ""}
+                              onSave={(v) => updateMemberField(m.id, "role", v, m.role)}
+                              savedKey={savedField === `${m.id}-role`}
+                            />
+                            <div className="relative">
+                              <select
+                                value={reportsToId}
+                                onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
+                                className="w-full appearance-none rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                              >
+                                <option value="">Top Level</option>
+                                {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
+                                  <option key={x.id} value={x.id}>{x.name}</option>
+                                ))}
+                              </select>
+                              {savedField === `${m.id}-reports_to` && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Edit History */}
@@ -485,6 +1077,47 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
             </div>
           </ModalOverlay>
         )}
+
+        {showAddHierarchyMember && (
+          <ModalOverlay onClose={() => setShowAddHierarchyMember(false)} title="Add Person to Hierarchy">
+            <div className="space-y-3">
+              <Input
+                label="Name"
+                value={newHierarchyMember.name}
+                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, name: v })}
+                placeholder="Member name"
+              />
+              <Input
+                label="Role"
+                value={newHierarchyMember.role}
+                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, role: v })}
+                placeholder="Role"
+              />
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Reports To</label>
+                <select
+                  value={newHierarchyMember.reportsTo}
+                  onChange={(e) => setNewHierarchyMember({ ...newHierarchyMember, reportsTo: e.target.value })}
+                  className="w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">Top Level</option>
+                  {assignedMembers.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+              <Select
+                label="Member Type"
+                value={newHierarchyMember.memberType}
+                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, memberType: v })}
+                options={["Internal", "Vendor", "Contractor"]}
+              />
+              <button onClick={handleAddHierarchyMember} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">
+                Add Person
+              </button>
+            </div>
+          </ModalOverlay>
+        )}
       </div>
     </AppLayout>
   );
@@ -529,10 +1162,14 @@ const ModalOverlay = ({ onClose, title, children }: { onClose: () => void; title
   </div>
 );
 
-const InlineEdit = ({ value, onSave, savedKey }: { value: string; onSave: (v: string) => void; savedKey: boolean }) => {
+const InlineEdit = ({ value, onSave, savedKey, multiline = false }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const timerRef = useRef<number>();
+
+  useEffect(() => {
+    setText(value);
+  }, [value]);
 
   const handleBlur = () => {
     setEditing(false);
@@ -541,6 +1178,19 @@ const InlineEdit = ({ value, onSave, savedKey }: { value: string; onSave: (v: st
       timerRef.current = window.setTimeout(() => onSave(text), 800);
     }
   };
+
+  if (editing && multiline) {
+    return (
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={handleBlur}
+        rows={3}
+        className="w-full min-w-[240px] rounded-md border border-primary/50 bg-secondary px-2 py-1 text-xs text-foreground outline-none resize-y"
+      />
+    );
+  }
 
   if (editing) {
     return (
@@ -556,7 +1206,86 @@ const InlineEdit = ({ value, onSave, savedKey }: { value: string; onSave: (v: st
 
   return (
     <div className="relative">
-      <span onClick={() => setEditing(true)} className="cursor-pointer text-muted-foreground hover:text-foreground max-w-[160px] block truncate">{value || "—"}</span>
+      <span
+        onClick={() => setEditing(true)}
+        className={`cursor-pointer text-muted-foreground hover:text-foreground block ${multiline ? "whitespace-normal break-words" : "max-w-[160px] truncate"}`}
+      >
+        {value || "—"}
+      </span>
+      {savedKey && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
+    </div>
+  );
+};
+
+const InlineDateEdit = ({ value, onSave, savedKey }: { value: string | null; onSave: (v: string) => void; savedKey: boolean }) => {
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(value || "");
+
+  useEffect(() => {
+    setDate(value || "");
+  }, [value]);
+
+  const handleBlur = () => {
+    setEditing(false);
+    if ((value || "") !== date) onSave(date);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        onBlur={handleBlur}
+        className="w-[118px] rounded-md border border-primary/50 bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+      />
+    );
+  }
+
+  return (
+    <div className="relative w-[118px]">
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="w-full text-left text-xs text-muted-foreground hover:text-foreground"
+      >
+        {formatDateReadable(value)}
+      </button>
+      {savedKey && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
+    </div>
+  );
+};
+
+const InlinePercentEdit = ({ value, onSave, savedKey }: { value: number | null; onSave: (v: number) => void; savedKey: boolean }) => {
+  const [draft, setDraft] = useState(String(clampProgress(value)));
+
+  useEffect(() => {
+    setDraft(String(clampProgress(value)));
+  }, [value]);
+
+  const commit = () => {
+    const next = clampProgress(draft);
+    const prev = clampProgress(value);
+    setDraft(String(next));
+    if (next !== prev) onSave(next);
+  };
+
+  return (
+    <div className="relative flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+        }}
+        className="w-10 rounded bg-transparent text-xs text-muted-foreground outline-none text-right"
+      />
+      <span className="text-muted-foreground text-xs">%</span>
       {savedKey && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
     </div>
   );
