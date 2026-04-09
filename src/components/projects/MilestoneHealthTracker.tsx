@@ -20,10 +20,11 @@ const getStatusColor = (color: string): string => {
   return colorMap[color] || "bg-gray-300";
 };
 
-const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practice" | "signoff" | "invoice"; allWeeks: Record<string, { label: string }> }) => {
+const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; type: "practice" | "signoff" | "invoice"; allWeeks: Record<string, { label: string }>; milestone?: string }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const weekLabel = allWeeks[String(week.week_number)]?.label || `W${week.week_number}`;
   const colorClass = getStatusColor(week.color);
+  const tooltipText = milestone ? `${milestone} - ${weekLabel}: ${week.status}` : `${weekLabel}: ${week.status}`;
 
   if (type === "practice") {
     return (
@@ -35,7 +36,7 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
         <div className={`w-4 h-4 rounded-sm ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
         {showTooltip && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-            {weekLabel}: {week.status}
+            {tooltipText}
           </div>
         )}
       </div>
@@ -52,7 +53,7 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
         <div className={`w-3 h-3 rounded-full ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
         {showTooltip && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-            {weekLabel}: {week.status}
+            {tooltipText}
           </div>
         )}
       </div>
@@ -69,7 +70,7 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
       <div className={`w-3 h-3 ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} style={{ transform: "rotate(45deg)" }} />
       {showTooltip && (
         <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-          {weekLabel}: {week.status}
+          {tooltipText}
         </div>
       )}
     </div>
@@ -218,14 +219,14 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
                   <div key={`${phase.type}-${monthKey}`} className="flex border-r border-gray-300">
                     {weeks.map((weekIdx, i) => {
                       let weekData: WeekData | undefined;
-                      const milestoneCodes: string[] = [];
+                      let milestoneCode: string | undefined;
 
                       allMilestones.forEach((milestone) => {
                         const phaseData = milestoneMap[milestone]?.[phase.type];
                         const week = phaseData?.weeks?.find((w) => w.week_number === weekIdx);
-                        if (week) {
+                        if (week && !weekData) {
                           weekData = week;
-                          milestoneCodes.push(milestone);
+                          milestoneCode = milestone;
                         }
                       });
 
@@ -235,7 +236,7 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
                           className={`flex-shrink-0 flex items-center justify-center py-4 px-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
                           style={{ width: "32px" }}
                         >
-                          {weekData && <WeekBlockCell week={weekData} type={phase.type} allWeeks={data.all_weeks} />}
+                          {weekData && <WeekBlockCell week={weekData} type={phase.type} allWeeks={data.all_weeks} milestone={milestoneCode} />}
                         </div>
                       );
                     })}
