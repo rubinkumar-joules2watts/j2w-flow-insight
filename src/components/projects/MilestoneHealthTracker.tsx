@@ -10,20 +10,20 @@ interface MilestoneHealthTrackerProps {
 
 const getStatusColor = (color: string): string => {
   const colorMap: Record<string, string> = {
-    blue: "bg-blue-500 border-blue-400",
-    green: "bg-green-500 border-green-400",
-    amber: "bg-amber-500 border-amber-400",
-    orange: "bg-orange-500 border-orange-400",
-    red: "bg-red-500 border-red-400",
-    gray: "bg-gray-600 border-gray-500",
+    blue: "bg-blue-500",
+    green: "bg-green-500",
+    amber: "bg-amber-500",
+    orange: "bg-orange-500",
+    red: "bg-red-500",
+    gray: "bg-gray-300",
   };
-  return colorMap[color] || "bg-gray-600 border-gray-500";
+  return colorMap[color] || "bg-gray-300";
 };
 
 const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practice" | "signoff" | "invoice"; allWeeks: Record<string, { label: string }> }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const weekLabel = allWeeks[String(week.week_number)]?.label || `W${week.week_number}`;
-  const colorClasses = getStatusColor(week.color);
+  const colorClass = getStatusColor(week.color);
 
   if (type === "practice") {
     return (
@@ -32,9 +32,9 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
-        <div className={`w-5 h-5 rounded-sm border ${colorClasses} cursor-pointer hover:scale-110 transition-transform`} />
+        <div className={`w-4 h-4 rounded-sm ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
         {showTooltip && (
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
             {weekLabel}: {week.status}
           </div>
         )}
@@ -49,9 +49,9 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
-        <div className={`w-4 h-4 rounded-full border ${colorClasses} cursor-pointer hover:scale-110 transition-transform`} />
+        <div className={`w-3 h-3 rounded-full ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
         {showTooltip && (
-          <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
             {weekLabel}: {week.status}
           </div>
         )}
@@ -66,9 +66,9 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      <div className={`w-3.5 h-3.5 border ${colorClasses} cursor-pointer hover:scale-110 transition-transform`} style={{ transform: "rotate(45deg)" }} />
+      <div className={`w-3 h-3 ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} style={{ transform: "rotate(45deg)" }} />
       {showTooltip && (
-        <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10">
+        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
           {weekLabel}: {week.status}
         </div>
       )}
@@ -79,7 +79,7 @@ const WeekBlockCell = ({ week, type, allWeeks }: { week: WeekData; type: "practi
 export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealthTrackerProps) => {
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
+      <div className="flex items-center justify-center p-8 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
         <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
       </div>
     );
@@ -87,7 +87,7 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
 
   if (error) {
     return (
-      <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-md text-sm text-red-400">
+      <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-600">
         Failed to load milestone health: {error.message}
       </div>
     );
@@ -122,95 +122,157 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
     { type: "invoice", label: "Invoice" },
   ];
 
+  // Group weeks by month and their positions within the month
+  const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string }> = {};
+  let currentMonth = "";
+  let monthStart = 0;
+
+  Object.entries(data.all_weeks).forEach(([idx, week]) => {
+    const monthLabel = week.label.split(" ")[0]; // e.g., "Jan", "Feb"
+    if (monthLabel !== currentMonth) {
+      if (currentMonth && monthGroups[currentMonth]) {
+        monthGroups[currentMonth].endIdx = parseInt(idx) - 1;
+      }
+      currentMonth = monthLabel;
+      monthStart = parseInt(idx);
+      if (!monthGroups[monthLabel]) {
+        monthGroups[monthLabel] = { startIdx: monthStart, endIdx: parseInt(idx), label: monthLabel };
+      }
+    }
+  });
+  if (currentMonth && monthGroups[currentMonth]) {
+    monthGroups[currentMonth].endIdx = Object.keys(data.all_weeks).length - 1;
+  }
+
   return (
-    <div className="bg-gray-900/40 border border-gray-800 rounded-lg p-6 space-y-6 overflow-x-auto">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-100 mb-1">{data.project_name} - Milestone Health</h3>
-        <p className="text-xs text-gray-400">
+    <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
+      {/* Header */}
+      <div className="border-b border-gray-300 px-6 py-4">
+        <h3 className="text-lg font-bold text-gray-800">{data.project_name} - Milestone Health</h3>
+        <p className="text-xs text-gray-500 mt-1">
           {data.weeks_range.start_week} — {data.weeks_range.end_week} ({data.weeks_range.total_weeks} weeks)
         </p>
       </div>
 
       {/* Matrix Table */}
-      <div className="min-w-max">
-        {/* Header Row - Milestones */}
-        <div className="flex border-b border-gray-700">
-          {/* Empty cell for phase labels column */}
-          <div className="w-40 flex-shrink-0 border-r border-gray-700" />
+      <div className="overflow-x-auto">
+        <div className="min-w-max">
+          {/* Month Headers */}
+          <div className="flex border-b border-gray-300">
+            {/* Empty cell for phase labels column */}
+            <div className="w-40 flex-shrink-0 border-r border-gray-300" />
 
-          {/* Milestone headers */}
-          {allMilestones.map((milestone) => (
-            <div key={milestone} className="w-24 flex-shrink-0 flex items-center justify-center border-r border-gray-700 py-3">
-              <span className="text-sm font-bold text-blue-400">{milestone}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Data Rows */}
-        {phases.map((phase) => (
-          <div key={phase.type} className="flex border-b border-gray-700 last:border-b-0">
-            {/* Phase Label Column */}
-            <div className="w-40 flex-shrink-0 border-r border-gray-700 flex items-center px-4 py-4 bg-gray-800/30">
-              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">{phase.label}</span>
-            </div>
-
-            {/* Milestone Data Cells */}
-            {allMilestones.map((milestone) => {
-              const phaseData = milestoneMap[milestone]?.[phase.type];
-              const weeks = phaseData?.weeks || [];
-
+            {/* Month headers */}
+            {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+              const weekCount = endIdx - startIdx + 1;
               return (
                 <div
-                  key={`${phase.type}-${milestone}`}
-                  className="w-24 flex-shrink-0 flex items-center justify-center border-r border-gray-700 py-4 px-2"
+                  key={month}
+                  className="flex-shrink-0 border-r border-gray-300 py-2 px-1 text-center"
+                  style={{ width: `${weekCount * 32}px` }}
                 >
-                  {weeks.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 justify-center">
-                      {weeks.slice(0, 6).map((week, idx) => (
-                        <WeekBlockCell key={idx} week={week} type={phase.type} allWeeks={data.all_weeks} />
-                      ))}
-                      {weeks.length > 6 && (
-                        <div className="text-[10px] text-gray-400 w-full text-center col-span-full">
-                          +{weeks.length - 6} more
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-500">—</div>
-                  )}
+                  <span className="text-xs font-semibold text-gray-600">{month}</span>
                 </div>
               );
             })}
           </div>
-        ))}
+
+          {/* Week Number Headers */}
+          <div className="flex border-b border-gray-300">
+            {/* Empty cell for phase labels column */}
+            <div className="w-40 flex-shrink-0 border-r border-gray-300" />
+
+            {/* Week numbers */}
+            {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+              const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
+              return (
+                <div key={`${month}-weeks`} className="flex border-r border-gray-300">
+                  {weeks.map((weekIdx, i) => (
+                    <div
+                      key={weekIdx}
+                      className={`flex-shrink-0 flex items-center justify-center text-center py-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
+                      style={{ width: "32px" }}
+                    >
+                      <span className="text-[10px] text-gray-500 font-medium">W{i + 1}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Data Rows */}
+          {phases.map((phase, phaseIdx) => (
+            <div
+              key={phase.type}
+              className={`flex ${phaseIdx < phases.length - 1 ? "border-b border-gray-300" : ""}`}
+            >
+              {/* Phase Label Column */}
+              <div className="w-40 flex-shrink-0 border-r border-gray-300 flex items-center px-4 py-4 bg-white/50">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">{phase.label}</span>
+              </div>
+
+              {/* Milestone Data Cells */}
+              {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+                const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
+                return (
+                  <div key={`${phase.type}-${month}`} className="flex border-r border-gray-300">
+                    {weeks.map((weekIdx, i) => {
+                      let weekData: WeekData | undefined;
+                      const milestoneCodes: string[] = [];
+
+                      allMilestones.forEach((milestone) => {
+                        const phaseData = milestoneMap[milestone]?.[phase.type];
+                        const week = phaseData?.weeks?.find((w) => w.week_number === weekIdx);
+                        if (week) {
+                          weekData = week;
+                          milestoneCodes.push(milestone);
+                        }
+                      });
+
+                      return (
+                        <div
+                          key={weekIdx}
+                          className={`flex-shrink-0 flex items-center justify-center py-4 px-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
+                          style={{ width: "32px" }}
+                        >
+                          {weekData && <WeekBlockCell week={weekData} type={phase.type} allWeeks={data.all_weeks} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Legend */}
-      <div className="pt-4 border-t border-gray-800">
-        <p className="text-xs font-semibold text-gray-400 mb-3 uppercase tracking-wide">Status Legend</p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-blue-500 rounded-sm border border-blue-400" />
-            <span className="text-gray-400">Completed</span>
+      {/* Footer - Legend */}
+      <div className="border-t border-gray-300 px-6 py-4 bg-white/30">
+        <p className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Status</p>
+        <div className="flex flex-wrap gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-blue-500" />
+            <span className="text-gray-600">Completed</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-amber-500 rounded-sm border border-amber-400" />
-            <span className="text-gray-400">Pending</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-amber-500" />
+            <span className="text-gray-600">Pending</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-orange-500 rounded-sm border border-orange-400" />
-            <span className="text-gray-400">In Progress</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-orange-500" />
+            <span className="text-gray-600">In Progress</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-sm border border-red-400" />
-            <span className="text-gray-400">At Risk</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-red-500" />
+            <span className="text-gray-600">At Risk</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-gray-600 rounded-sm border border-gray-500" />
-            <span className="text-gray-400">No Data</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-sm bg-gray-300" />
+            <span className="text-gray-600">No Data</span>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mt-3">Shape Legend: □ Practice • Signoff ◆ Invoice</p>
       </div>
     </div>
   );
