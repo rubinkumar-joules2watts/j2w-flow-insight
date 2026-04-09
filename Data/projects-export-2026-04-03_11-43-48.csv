@@ -1,9 +1,0 @@
-id;client_id;name;code;service_type;revenue_model;project_type;delivery_manager;client_spoc;handled_by;status;created_at;updated_at
-c1000000-0000-0000-0000-000000000001;a1000000-0000-0000-0000-000000000001;ITSE Dashboard;;Outcome;Milestone;;Anuradha Murthy;Rashim Chaudhary;Wipro;In Progress;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000002;a1000000-0000-0000-0000-000000000002;Gate Test Maintenance;;Outcome;Milestone;;Sadhna Shukla;Abhishaik Srivastava;Consultant/IGS;Blocked;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000003;a1000000-0000-0000-0000-000000000002;AVS Scrum;;Governance;Monthly;;Sadhna Shukla;Mitul Agrawal;Internal Team;On Track;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000004;a1000000-0000-0000-0000-000000000002;Devops PitCrew CD Automation;;Governance;Monthly;;Sadhna Shukla;Abhishaik Srivastava;Consultant/IGS;On Track;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000005;a1000000-0000-0000-0000-000000000002;LTS;;Outcome;Milestone;;Sadhna Shukla;;Internal Team;Planning;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000006;a1000000-0000-0000-0000-000000000003;SEO Roadmap Deep Dive;;Governance;Monthly;;Mehr;Charushila Biswas;Internal Team;On Track;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000007;a1000000-0000-0000-0000-000000000004;Pricing Engine Commercial Twin;;Outcome;Milestone;;Sadhna Shukla;;Internal Team;In Progress;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00
-c1000000-0000-0000-0000-000000000008;a1000000-0000-0000-0000-000000000004;Pricing Engine Transition Factory;;Outcome;Milestone;;Sadhna Shukla;;Internal Team;Planning;2026-04-02 10:32:06.696681+00;2026-04-02 10:32:06.696681+00

@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
+import FilterSelect from "@/components/common/FilterSelect";
 import { useProjects, useTeamMembers, useAssignments, useClients } from "@/hooks/useData";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
+const Resources = () => {
   const qc = useQueryClient();
   const { data: members } = useTeamMembers();
   const { data: projects } = useProjects();
@@ -33,11 +34,11 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
   const filteredProjects = projectFilter === "all" ? (projects || []) : (projects || []).filter((p) => p.id === projectFilter);
 
   useEffect(() => {
-    const channel = supabase.channel("resources-realtime")
+    const channel = api.channel("resources-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "team_members" }, () => qc.invalidateQueries({ queryKey: ["team_members"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { api.removeChannel(channel); };
   }, [qc]);
 
   const getProjectsForMember = (memberId: string) =>
@@ -58,7 +59,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
     const initials = newMember.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
     const colors = ["#3CBFB0", "#60A5FA", "#C084FC", "#F59E0B", "#22C55E", "#FB923C", "#E8253A", "#F472B6"];
     const color = colors[Math.floor(Math.random() * colors.length)];
-    const { data, error } = await supabase.from("team_members").insert({
+    const { data, error } = await api.from("team_members").insert({
       name: newMember.name, role: newMember.role, reports_to: newMember.reportsTo || null,
       member_type: newMember.memberType, engagement_pct: newMember.engagementPct,
       initials, color_hex: color,
@@ -66,7 +67,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
     if (error) { toast.error("Failed to add member"); return; }
     await writeAuditLog("team_members", data.id, "INSERT", null, data);
     for (const pId of newMember.projectIds) {
-      const { data: a } = await supabase.from("project_assignments").insert({ project_id: pId, team_member_id: data.id }).select().single();
+      const { data: a } = await api.from("project_assignments").insert({ project_id: pId, team_member_id: data.id }).select().single();
       if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
     }
     qc.invalidateQueries({ queryKey: ["team_members"] });
@@ -79,12 +80,12 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
   const handleToggleAssignment = async (memberId: string, projectId: string) => {
     const existing = assignments?.find((a) => a.team_member_id === memberId && a.project_id === projectId);
     if (existing) {
-      const { error } = await supabase.from("project_assignments").delete().eq("id", existing.id);
+      const { error } = await api.from("project_assignments").delete().eq("id", existing.id);
       if (error) { toast.error("Failed"); return; }
       await writeAuditLog("project_assignments", existing.id, "DELETE", existing, null);
       toast.success(`✓ Unassigned · ${new Date().toLocaleTimeString()}`);
     } else {
-      const { data, error } = await supabase.from("project_assignments").insert({ project_id: projectId, team_member_id: memberId }).select().single();
+      const { data, error } = await api.from("project_assignments").insert({ project_id: projectId, team_member_id: memberId }).select().single();
       if (error) { toast.error("Failed"); return; }
       await writeAuditLog("project_assignments", data.id, "INSERT", null, data);
       toast.success(`✓ Assigned · ${new Date().toLocaleTimeString()}`);
@@ -99,7 +100,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
 
     const memberAssignments = assignments?.filter((a) => a.team_member_id === memberId) || [];
     for (const a of memberAssignments) {
-      const { error } = await supabase.from("project_assignments").delete().eq("id", a.id);
+      const { error } = await api.from("project_assignments").delete().eq("id", a.id);
       if (error) {
         toast.error("Failed to delete assignments for member");
         return;
@@ -107,7 +108,7 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
       await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
     }
 
-    const { error } = await supabase.from("team_members").delete().eq("id", memberId);
+    const { error } = await api.from("team_members").delete().eq("id", memberId);
     if (error) {
       toast.error("Failed to delete member");
       return;
@@ -134,35 +135,43 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
 
   return (
     <AppLayout>
-      <Topbar title="Resource Allocation" themeToggle={themeToggle} />
+      <Topbar title="Resource Allocation" />
       <div className="p-6 space-y-5 animate-fade-in">
-        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
-          <input
-            value={memberSearch}
-            onChange={(e) => setMemberSearch(e.target.value)}
-            placeholder="Search Member"
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          />
-          <select
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+              Search
+            </label>
+            <input
+              value={memberSearch}
+              onChange={(e) => setMemberSearch(e.target.value)}
+              placeholder="Search Member Name"
+              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            />
+          </div>
+          <FilterSelect
             value={memberRoleFilter}
-            onChange={(e) => setMemberRoleFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Roles</option>
-            {Array.from(new Set((members || []).map((m) => m.role).filter(Boolean))).map((role) => (
-              <option key={role} value={role}>{role}</option>
-            ))}
-          </select>
-          <select
+            onChange={setMemberRoleFilter}
+            label="Role"
+            placeholder="All Roles"
+            options={[
+              { label: "All Roles", value: "all" },
+              ...Array.from(new Set((members || []).map((m) => m.role).filter(Boolean))).map((role) => ({
+                label: role || "Unassigned",
+                value: role || "unassigned"
+              }))
+            ]}
+          />
+          <FilterSelect
             value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Projects</option>
-            {(projects || []).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+            onChange={setProjectFilter}
+            label="Project"
+            placeholder="All Projects"
+            options={[
+              { label: "All Projects", value: "all" },
+              ...((projects || []).map((p) => ({ label: p.name, value: p.id })))
+            ]}
+          />
         </div>
 
         {/* Team Overview */}
@@ -219,49 +228,52 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
         </div>
 
         {/* Allocation Matrix */}
-        <div className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-bold text-foreground">Work Allocation Matrix</h3>
+        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
+          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
+            <h3 className="text-lg font-bold text-white">Work Allocation Matrix</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-0 bg-card z-10">Member</th>
+                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
+                  <th className="px-6 py-4 font-bold text-white sticky left-0 bg-gradient-to-r from-slate-800 to-slate-900 z-10 min-w-[200px]">Member</th>
                   {projects?.map((p) => (
-                    <th key={p.id} className="px-2 py-2 text-center font-medium text-muted-foreground whitespace-nowrap max-w-[80px]">
+                    <th key={p.id} className="px-4 py-4 text-center font-bold text-white whitespace-nowrap tracking-wide uppercase text-xs">
                       <span className="block truncate">{p.name}</span>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredMembers.map((m) => (
-                  <tr key={m.id} className="border-b border-border last:border-0">
-                    <td className="px-3 py-2 text-foreground font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{m.name}</td>
-                    {filteredProjects.map((p) => {
-                      const isAssigned = assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id);
-                      const isConfirming = confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id;
-                      return (
-                        <td key={p.id} className="px-2 py-2 text-center">
-                          {isConfirming ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <button onClick={() => handleToggleAssignment(m.id, p.id)} className="text-success"><Check size={12} /></button>
-                              <button onClick={() => setConfirmToggle(null)} className="text-muted-foreground"><X size={12} /></button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => isAssigned ? setConfirmToggle({ memberId: m.id, projectId: p.id }) : handleToggleAssignment(m.id, p.id)}
-                              className={`h-5 w-5 rounded-full mx-auto flex items-center justify-center transition-colors ${isAssigned ? "bg-primary" : "bg-secondary hover:bg-muted"}`}
-                            >
-                              {isAssigned && <Check size={10} className="text-primary-foreground" />}
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {filteredMembers.map((m, idx) => {
+                  const isEvenRow = idx % 2 === 0;
+                  return (
+                    <tr key={m.id} className={`border-b border-slate-700/50 ${isEvenRow ? "bg-slate-800/20" : "bg-transparent"} hover:bg-blue-600/15 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-white font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-slate-900 to-transparent">{m.name}</td>
+                      {filteredProjects.map((p) => {
+                        const isAssigned = assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id);
+                        const isConfirming = confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id;
+                        return (
+                          <td key={p.id} className="px-4 py-4 text-center">
+                            {isConfirming ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <button onClick={() => handleToggleAssignment(m.id, p.id)} className="text-emerald-400 hover:text-emerald-300"><Check size={16} /></button>
+                                <button onClick={() => setConfirmToggle(null)} className="text-slate-500 hover:text-slate-300"><X size={16} /></button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => isAssigned ? setConfirmToggle({ memberId: m.id, projectId: p.id }) : handleToggleAssignment(m.id, p.id)}
+                                className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-slate-700 hover:bg-slate-600"}`}
+                              >
+                                {isAssigned && <Check size={14} className="text-white font-bold" />}
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -283,24 +295,25 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
         </div>
 
         {/* Gantt Timeline */}
-        <div className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-bold text-foreground">Work Allocation Timeline (2026)</h3>
+        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
+          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
+            <h3 className="text-lg font-bold text-white">Work Allocation Timeline (2026)</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground sticky left-0 bg-card z-10">Member</th>
-                  {months.map((m) => <th key={m} className="px-2 py-2 text-center font-medium text-muted-foreground min-w-[60px]">{m}</th>)}
+                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
+                  <th className="px-6 py-4 font-bold text-white sticky left-0 bg-gradient-to-r from-slate-800 to-slate-900 z-10 min-w-[200px]">Member</th>
+                  {months.map((m) => <th key={m} className="px-4 py-4 text-center font-bold text-white min-w-[80px] tracking-wide uppercase text-xs">{m}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {filteredMembers.map((m) => {
+                {filteredMembers.map((m, idx) => {
                   const memberAssigns = assignments?.filter((a) => a.team_member_id === m.id) || [];
+                  const isEvenRow = idx % 2 === 0;
                   return (
-                    <tr key={m.id} className="border-b border-border last:border-0">
-                      <td className="px-3 py-2 text-foreground font-medium sticky left-0 bg-card z-10 whitespace-nowrap">{m.name}</td>
+                    <tr key={m.id} className={`border-b border-slate-700/50 ${isEvenRow ? "bg-slate-800/20" : "bg-transparent"} hover:bg-blue-600/15 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-white font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-slate-900 to-transparent">{m.name}</td>
                       {months.map((_, mi) => {
                         const activeProject = memberAssigns.find((a) => {
                           if (!a.start_date && !a.end_date) return true; // always active if no dates
@@ -308,12 +321,12 @@ const Resources = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () 
                           const end = a.end_date ? new Date(a.end_date).getMonth() : 11;
                           return mi >= start && mi <= end;
                         });
-                        if (!activeProject) return <td key={mi} className="px-2 py-2" />;
+                        if (!activeProject) return <td key={mi} className="px-4 py-4" />;
                         const proj = filteredProjects.find((p) => p.id === activeProject.project_id) || projects?.find((p) => p.id === activeProject.project_id);
                         return (
-                          <td key={mi} className="px-1 py-2">
-                            <div className="rounded px-1 py-0.5 text-[9px] font-medium text-center truncate" style={{ backgroundColor: m.color_hex ? `${m.color_hex}33` : "#66666633", color: m.color_hex || "#666" }}>
-                              {proj?.name?.slice(0, 6)}
+                          <td key={mi} className="px-4 py-4">
+                            <div className="rounded-lg px-3 py-2 text-xs font-bold text-center" style={{ backgroundColor: m.color_hex ? `${m.color_hex}40` : "#66666640", color: m.color_hex || "#888", border: `1px solid ${m.color_hex || "#888"}40` }}>
+                              {proj?.name?.slice(0, 8)}
                             </div>
                           </td>
                         );
@@ -394,7 +407,7 @@ const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () =>
   const handleSave = async () => {
     const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, engagement_pct: member.engagement_pct };
     const newValues = { name: form.name, role: form.role, reports_to: form.reportsTo || null, member_type: form.memberType, engagement_pct: form.engagementPct };
-    const { error } = await supabase.from("team_members").update(newValues).eq("id", member.id);
+    const { error } = await api.from("team_members").update(newValues).eq("id", member.id);
     if (error) { toast.error("Failed to update"); return; }
     await writeAuditLog("team_members", member.id, "UPDATE", oldValues, newValues);
     qc.invalidateQueries({ queryKey: ["team_members"] });

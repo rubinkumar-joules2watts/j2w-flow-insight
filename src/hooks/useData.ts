@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 
 export type Client = { id: string; name: string };
 export type Project = {
@@ -45,35 +45,35 @@ export type ProjectDocument = {
 
 export const useClients = () =>
   useQuery({ queryKey: ["clients"], queryFn: async () => {
-    const { data, error } = await supabase.from("clients").select("*");
+    const { data, error } = await api.from("clients").select("*");
     if (error) throw error;
     return data as Client[];
   }});
 
 export const useProjects = () =>
   useQuery({ queryKey: ["projects"], queryFn: async () => {
-    const { data, error } = await supabase.from("projects").select("*");
+    const { data, error } = await api.from("projects").select("*");
     if (error) throw error;
     return data as Project[];
   }});
 
 export const useMilestones = () =>
   useQuery({ queryKey: ["milestones"], queryFn: async () => {
-    const { data, error } = await supabase.from("milestones").select("*");
+    const { data, error } = await api.from("milestones").select("*");
     if (error) throw error;
     return data as Milestone[];
   }});
 
 export const useTeamMembers = () =>
   useQuery({ queryKey: ["team_members"], queryFn: async () => {
-    const { data, error } = await supabase.from("team_members").select("*");
+    const { data, error } = await api.from("team_members").select("*");
     if (error) throw error;
     return data as TeamMember[];
   }});
 
 export const useAssignments = () =>
   useQuery({ queryKey: ["project_assignments"], queryFn: async () => {
-    const { data, error } = await supabase.from("project_assignments").select("*");
+    const { data, error } = await api.from("project_assignments").select("*");
     if (error) throw error;
     return data as ProjectAssignment[];
   }});
@@ -86,21 +86,21 @@ export type AuditEntry = {
 
 export const useAuditLog = () =>
   useQuery({ queryKey: ["audit_log"], queryFn: async () => {
-    const { data, error } = await supabase.from("audit_log").select("*").order("created_at", { ascending: false });
+    const { data, error } = await api.from("audit_log").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     return data as AuditEntry[];
   }});
 
 export const useProjectUpdates = () =>
   useQuery({ queryKey: ["project_updates"], queryFn: async () => {
-    const { data, error } = await supabase.from("project_updates").select("*").order("activity_date", { ascending: true });
+    const { data, error } = await api.from("project_updates").select("*").order("activity_date", { ascending: true });
     if (error) throw error;
     return data as ProjectUpdate[];
   }});
 
 export const useProjectDocuments = () =>
   useQuery({ queryKey: ["project_documents"], queryFn: async () => {
-    const { data, error } = await supabase.from("project_documents").select("*").order("created_at", { ascending: false });
+    const { data, error } = await api.from("project_documents").select("*").order("created_at", { ascending: false });
     if (error) throw error;
     return data as ProjectDocument[];
   }});

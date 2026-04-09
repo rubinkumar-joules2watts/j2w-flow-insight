@@ -2,8 +2,9 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
+import FilterSelect from "@/components/common/FilterSelect";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments } from "@/hooks/useData";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Check, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon } from "lucide-react";
@@ -36,7 +37,7 @@ const deriveInitials = (name: string) =>
     .map((part) => part[0]?.toUpperCase() || "")
     .join("") || "TM";
 
-const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
+const Projects = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -133,13 +134,13 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   // Realtime subscription
   useEffect(() => {
-    const channel = supabase.channel("projects-realtime")
+    const channel = api.channel("projects-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_updates" }, () => qc.invalidateQueries({ queryKey: ["project_updates"] }))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { api.removeChannel(channel); };
   }, [qc]);
 
   const showSaved = (fieldId: string) => {
@@ -188,7 +189,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       }
     }
 
-    const { error } = await supabase.from("milestones").update(next as any).eq("id", id);
+    const { error } = await api.from("milestones").update(next as any).eq("id", id);
     if (error) { toast.error("Failed to update"); return; }
 
     const changedFields = Object.keys(next);
@@ -205,7 +206,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
-    const { error } = await supabase.from("projects").update({ [field]: value } as any).eq("id", project.id);
+    const { error } = await api.from("projects").update({ [field]: value } as any).eq("id", project.id);
     if (error) { toast.error("Failed to update"); return; }
     await writeAuditLog("projects", project.id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
     qc.invalidateQueries({ queryKey: ["projects"] });
@@ -221,12 +222,12 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     const existing = clients?.find((c) => c.name.toLowerCase() === newProject.clientName.toLowerCase());
     if (existing) { clientId = existing.id; }
     else {
-      const { data, error } = await supabase.from("clients").insert({ name: newProject.clientName }).select().single();
+      const { data, error } = await api.from("clients").insert({ name: newProject.clientName }).select().single();
       if (error) { toast.error("Failed to create client"); return; }
       clientId = data.id;
       qc.invalidateQueries({ queryKey: ["clients"] });
     }
-    const { data: proj, error } = await supabase.from("projects").insert({
+    const { data: proj, error } = await api.from("projects").insert({
       client_id: clientId, name: newProject.name, code: newProject.code || null,
       service_type: newProject.serviceType, revenue_model: newProject.revenueModel,
       delivery_manager: newProject.deliveryManager || null, client_spoc: newProject.clientSpoc || null,
@@ -235,7 +236,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     if (error) { toast.error("Failed to create project"); return; }
     await writeAuditLog("projects", proj.id, "INSERT", null, proj);
     for (const mId of newProject.memberIds) {
-      const { data: a } = await supabase.from("project_assignments").insert({ project_id: proj.id, team_member_id: mId }).select().single();
+      const { data: a } = await api.from("project_assignments").insert({ project_id: proj.id, team_member_id: mId }).select().single();
       if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
     }
     qc.invalidateQueries({ queryKey: ["projects"] });
@@ -248,7 +249,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   const [newMs, setNewMs] = useState({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
   const handleAddMilestone = async () => {
-    const { data, error } = await supabase.from("milestones").insert({
+    const { data, error } = await api.from("milestones").insert({
       project_id: selectedId, milestone_code: newMs.code, description: newMs.description,
       planned_start: newMs.plannedStart || null, planned_end: newMs.plannedEnd || null,
       deliverables: newMs.deliverables || null,
@@ -262,7 +263,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   };
 
   const handleAssignMember = async (memberId: string) => {
-    const { data, error } = await supabase.from("project_assignments").insert({ project_id: selectedId, team_member_id: memberId }).select().single();
+    const { data, error } = await api.from("project_assignments").insert({ project_id: selectedId, team_member_id: memberId }).select().single();
     if (error) { toast.error("Failed to assign"); return; }
     await writeAuditLog("project_assignments", data.id, "INSERT", null, data);
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
@@ -273,7 +274,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const handleRemoveMember = async (memberId: string) => {
     const assignment = assignments?.find((a) => a.project_id === selectedId && a.team_member_id === memberId);
     if (!assignment) return;
-    const { error } = await supabase.from("project_assignments").delete().eq("id", assignment.id);
+    const { error } = await api.from("project_assignments").delete().eq("id", assignment.id);
     if (error) { toast.error("Failed to remove"); return; }
     await writeAuditLog("project_assignments", assignment.id, "DELETE", assignment, null);
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
@@ -290,7 +291,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   };
 
   const updateMemberField = useCallback(async (memberId: string, field: "role" | "reports_to", value: string | null, oldVal: unknown) => {
-    const { error } = await supabase.from("team_members").update({ [field]: value } as any).eq("id", memberId);
+    const { error } = await api.from("team_members").update({ [field]: value } as any).eq("id", memberId);
     if (error) { toast.error("Failed to update member"); return; }
     await writeAuditLog("team_members", memberId, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
     qc.invalidateQueries({ queryKey: ["team_members"] });
@@ -317,13 +318,13 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       is_active: true,
     };
 
-    const { data: member, error: memberError } = await supabase.from("team_members").insert(payload as any).select().single();
+    const { data: member, error: memberError } = await api.from("team_members").insert(payload as any).select().single();
     if (memberError || !member) {
       toast.error("Failed to add person");
       return;
     }
 
-    const { data: assignment, error: assignmentError } = await supabase
+    const { data: assignment, error: assignmentError } = await api
       .from("project_assignments")
       .insert({ project_id: project.id, team_member_id: member.id } as any)
       .select()
@@ -349,7 +350,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const handleAddUpdate = async () => {
     if (!newUpdate.trim() || !project) return;
     setIsAddingUpdate(true);
-    const { data: updateData, error } = await supabase.from("project_updates").insert({
+    const { data: updateData, error } = await api.from("project_updates").insert({
       project_id: project.id,
       content: newUpdate.trim(),
       activity_date: updateDate,
@@ -378,7 +379,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     if (updateId) formData.append("update_id", updateId);
     if (category) formData.append("category", category);
 
-    const response = await fetch("/api/upload", { method: "POST", body: formData });
+    const response = await fetch(apiUrl("/api/upload"), { method: "POST", body: formData });
     if (!response.ok) throw new Error("Upload failed");
     qc.invalidateQueries({ queryKey: ["project_documents"] });
     qc.invalidateQueries({ queryKey: ["project_updates"] });
@@ -387,7 +388,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>, updateId?: string) => {
     const file = e.target.files?.[0];
     if (!file || !project) return;
-    
+
     if (updateId) setUploadingUpdateId(updateId);
     else setIsUploading(true);
 
@@ -405,7 +406,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   };
 
   const handleDeleteDocument = async (docId: string) => {
-    const { error } = await supabase.from("project_documents").delete().eq("id", docId);
+    const { error } = await api.from("project_documents").delete().eq("id", docId);
     if (error) toast.error("Failed to delete");
     else {
       qc.invalidateQueries({ queryKey: ["project_documents"] });
@@ -442,36 +443,34 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
         {/* Top connector for non-root nodes */}
         {hasParent && (
           <div className="flex flex-col items-center w-full">
-             {/* The bridge segment from the sibling group */}
-             <div className="relative w-full h-4">
-                {/* Horizontal line */}
-                {!(isFirst && isLast) && (
-                  <div className={`absolute top-0 h-px bg-border/60 ${
-                    isFirst ? "left-1/2 right-0" : 
-                    isLast ? "left-0 right-1/2" : 
+            {/* The bridge segment from the sibling group */}
+            <div className="relative w-full h-4">
+              {/* Horizontal line */}
+              {!(isFirst && isLast) && (
+                <div className={`absolute top-0 h-px bg-border/60 ${isFirst ? "left-1/2 right-0" :
+                  isLast ? "left-0 right-1/2" :
                     "left-0 right-0"
                   }`} />
-                )}
-                {/* Vertical line into the card */}
-                <div className="absolute left-1/2 top-0 -translate-x-1/2 h-full w-px bg-border/60" />
-             </div>
+              )}
+              {/* Vertical line into the card */}
+              <div className="absolute left-1/2 top-0 -translate-x-1/2 h-full w-px bg-border/60" />
+            </div>
           </div>
         )}
 
         {/* Node Card */}
-        <div 
-          className={`group flex flex-col items-center gap-2 rounded-xl border p-3 transition-all duration-300 shadow-sm relative z-10 ${
-            level === 0 
-              ? "bg-primary/5 border-primary/20 shadow-primary/5 min-w-[200px]" 
-              : "bg-card border-border/60 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 min-w-[180px]"
-          }`}
+        <div
+          className={`group flex flex-col items-center gap-2 rounded-xl border p-3 transition-all duration-300 shadow-sm relative z-10 ${level === 0
+            ? "bg-primary/5 border-primary/20 shadow-primary/5 min-w-[200px]"
+            : "bg-card border-border/60 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 min-w-[180px]"
+            }`}
         >
-          <div 
-            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner" 
-            style={{ 
-              backgroundColor: member.color_hex || "#666", 
+          <div
+            className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner"
+            style={{
+              backgroundColor: member.color_hex || "#666",
               color: "#fff",
-              boxShadow: `0 0 0 2px ${member.color_hex}44` 
+              boxShadow: `0 0 0 2px ${member.color_hex}44`
             }}
           >
             {member.initials || deriveInitials(member.name)}
@@ -484,7 +483,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
               {member.role || "No role"}
             </p>
             {member.member_type === "External" && (
-                <span className="mt-1 inline-block text-[8px] bg-accent/10 text-accent px-1 rounded-sm border border-accent/20 font-bold uppercase tracking-tighter">EXT</span>
+              <span className="mt-1 inline-block text-[8px] bg-accent/10 text-accent px-1 rounded-sm border border-accent/20 font-bold uppercase tracking-tighter">EXT</span>
             )}
           </div>
           {children.length > 0 && (
@@ -499,7 +498,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
           <div className="flex flex-col items-center">
             {/* Vertical line down to children group */}
             <div className="h-4 w-px bg-border/60" />
-            
+
             <div className="flex items-start gap-8">
               {children.map((child, idx) =>
                 renderHierarchyNode(
@@ -521,7 +520,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const handleDeleteMilestone = async (milestoneId: string) => {
     const ms = milestones?.find((m) => m.id === milestoneId);
     if (!ms) return;
-    const { error } = await supabase.from("milestones").delete().eq("id", milestoneId);
+    const { error } = await api.from("milestones").delete().eq("id", milestoneId);
     if (error) {
       toast.error("Failed to delete milestone");
       return;
@@ -541,7 +540,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     const relatedAssignments = assignments?.filter((a) => a.project_id === projectId) || [];
 
     for (const ms of relatedMilestones) {
-      const { error } = await supabase.from("milestones").delete().eq("id", ms.id);
+      const { error } = await api.from("milestones").delete().eq("id", ms.id);
       if (error) {
         toast.error("Failed to delete related milestones");
         return;
@@ -550,7 +549,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
     }
 
     for (const a of relatedAssignments) {
-      const { error } = await supabase.from("project_assignments").delete().eq("id", a.id);
+      const { error } = await api.from("project_assignments").delete().eq("id", a.id);
       if (error) {
         toast.error("Failed to delete related assignments");
         return;
@@ -558,7 +557,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
       await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
     }
 
-    const { error } = await supabase.from("projects").delete().eq("id", projectId);
+    const { error } = await api.from("projects").delete().eq("id", projectId);
     if (error) {
       toast.error("Failed to delete project");
       return;
@@ -585,36 +584,44 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   return (
     <AppLayout>
-      <Topbar title="Projects" themeToggle={themeToggle} />
+      <Topbar title="Projects" />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Filters */}
-        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
-          <select
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+          <FilterSelect
             value={projectClientFilter}
-            onChange={(e) => setProjectClientFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Clients</option>
-            {(clients || []).map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
-            value={projectStatusFilter}
-            onChange={(e) => setProjectStatusFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Project Status</option>
-            {["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"].map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <input
-            value={projectSearch}
-            onChange={(e) => setProjectSearch(e.target.value)}
-            placeholder="Search Project"
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+            onChange={setProjectClientFilter}
+            label="Client"
+            placeholder="All Clients"
+            options={[
+              { label: "All Clients", value: "all" },
+              ...((clients || []).map((c) => ({ label: c.name, value: c.id })))
+            ]}
           />
+          <FilterSelect
+            value={projectStatusFilter}
+            onChange={setProjectStatusFilter}
+            label="Status"
+            placeholder="All Project Status"
+            options={[
+              { label: "All Project Status", value: "all" },
+              { label: "On Track", value: "On Track" },
+              { label: "At Risk", value: "At Risk" },
+              { label: "Blocked", value: "Blocked" },
+              { label: "Completed", value: "Completed" }
+            ]}
+          />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+              Search
+            </label>
+            <input
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              placeholder="Search Project Name"
+              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            />
+          </div>
         </div>
 
         {/* Project Selector */}
@@ -625,11 +632,10 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
               <button
                 key={p.id}
                 onClick={() => navigate(`/projects?id=${p.id}`)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  p.id === selectedId
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                }`}
+                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${p.id === selectedId
+                  ? "border-primary bg-primary/15 text-primary"
+                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                  }`}
               >
                 {cl?.name} · {p.name}
               </button>
@@ -649,9 +655,9 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                   <h2 className="text-lg font-bold text-foreground flex items-center gap-1.5">
                     <span className="text-muted-foreground/60 font-semibold">{client?.name}</span>
                     <span className="text-muted-foreground/40 font-light">·</span>
-                    <InlineEdit 
-                      value={project.name} 
-                      onSave={(v) => updateProject("name", v, project.name)} 
+                    <InlineEdit
+                      value={project.name}
+                      onSave={(v) => updateProject("name", v, project.name)}
                       savedKey={savedField === "proj-name"}
                       className="hover:text-primary transition-colors cursor-text"
                     />
@@ -671,7 +677,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
                   <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
-                  <EditableSelect value={project.status || "Planning"} options={["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"]} onSave={(v) => updateProject("status", v, project.status)} />
+                  <EditableSelect value={project.status || "On Track"} options={["On Track", "At Risk", "Blocked", "Completed"]} onSave={(v) => updateProject("status", v, project.status)} />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
@@ -714,13 +720,12 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         <button
                           key={cat}
                           onClick={() => setUpdateCategory(cat)}
-                          className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${
-                            updateCategory === cat
-                              ? cat === "Internal" ? "bg-blue-500 text-white shadow-sm" :
-                                cat === "Sales" ? "bg-emerald-500 text-white shadow-sm" :
+                          className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${updateCategory === cat
+                            ? cat === "Internal" ? "bg-blue-500 text-white shadow-sm" :
+                              cat === "Sales" ? "bg-emerald-500 text-white shadow-sm" :
                                 "bg-orange-500 text-white shadow-sm"
-                              : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                          }`}
+                            : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                            }`}
                         >
                           {cat}
                         </button>
@@ -737,41 +742,41 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                       disabled={isAddingUpdate}
                     />
                     <div className="absolute right-2 top-1.5 flex items-center gap-1">
-                       <button
-                         type="button"
-                         onClick={() => {
-                           const el = document.createElement('input');
-                           el.type = 'file';
-                           el.onchange = (e) => {
-                             const f = (e.target as HTMLInputElement).files?.[0];
-                             if (f) setPendingUpdateFile(f);
-                           };
-                           el.click();
-                         }}
-                         className={`flex h-7 w-7 items-center justify-center rounded-md border transition-all ${pendingUpdateFile ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
-                         title={pendingUpdateFile ? `Ready to upload: ${pendingUpdateFile.name}` : "Attach document"}
-                       >
-                         <Paperclip size={14} className={pendingUpdateFile ? "animate-pulse" : ""} />
-                       </button>
-                       <button
-                         onClick={handleAddUpdate}
-                         disabled={isAddingUpdate || (!newUpdate.trim() && !pendingUpdateFile)}
-                         className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
-                       >
-                         <Send size={14} />
-                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.createElement('input');
+                          el.type = 'file';
+                          el.onchange = (e) => {
+                            const f = (e.target as HTMLInputElement).files?.[0];
+                            if (f) setPendingUpdateFile(f);
+                          };
+                          el.click();
+                        }}
+                        className={`flex h-7 w-7 items-center justify-center rounded-md border transition-all ${pendingUpdateFile ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+                        title={pendingUpdateFile ? `Ready to upload: ${pendingUpdateFile.name}` : "Attach document"}
+                      >
+                        <Paperclip size={14} className={pendingUpdateFile ? "animate-pulse" : ""} />
+                      </button>
+                      <button
+                        onClick={handleAddUpdate}
+                        disabled={isAddingUpdate || (!newUpdate.trim() && !pendingUpdateFile)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        <Send size={14} />
+                      </button>
                     </div>
                   </div>
                   {pendingUpdateFile && (
                     <div className="flex items-center gap-2 px-1">
-                       <div className="flex items-center gap-1.5 rounded-full bg-primary/5 border border-primary/20 px-2 py-0.5 animate-in slide-in-from-top-1 duration-200">
-                         <FileText size={10} className="text-primary" />
-                         <span className="text-[10px] font-bold text-primary truncate max-w-[200px]">{pendingUpdateFile.name}</span>
-                         <button onClick={() => setPendingUpdateFile(null)} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
-                            <X size={10} />
-                         </button>
-                       </div>
-                       <span className="text-[10px] text-muted-foreground animate-pulse">will be uploaded with update</span>
+                      <div className="flex items-center gap-1.5 rounded-full bg-primary/5 border border-primary/20 px-2 py-0.5 animate-in slide-in-from-top-1 duration-200">
+                        <FileText size={10} className="text-primary" />
+                        <span className="text-[10px] font-bold text-primary truncate max-w-[200px]">{pendingUpdateFile.name}</span>
+                        <button onClick={() => setPendingUpdateFile(null)} className="text-muted-foreground hover:text-destructive transition-colors ml-1">
+                          <X size={10} />
+                        </button>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground animate-pulse">will be uploaded with update</span>
                     </div>
                   )}
                 </div>
@@ -780,132 +785,128 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
             {/* Timeline Feed */}
             <div className="relative">
-               <div className="flex items-center justify-between mb-2 px-1">
-                 <div className="flex items-center gap-2">
-                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Filters</h4>
-                   <div className="flex items-center gap-1.5 ml-2">
-                     {["all", "Internal", "Sales", "Cadence"].map((f) => (
-                       <button
-                         key={f}
-                         onClick={() => setTimelineFilter(f)}
-                         className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold transition-all border ${
-                           timelineFilter === f
-                             ? f === "Internal" ? "bg-blue-500 border-blue-500 text-white" :
-                               f === "Sales" ? "bg-emerald-500 border-emerald-500 text-white" :
-                               f === "Cadence" ? "bg-orange-500 border-orange-500 text-white" :
-                               "bg-foreground border-foreground text-background"
-                             : "bg-secondary/50 border-border/50 text-muted-foreground hover:border-primary/30"
-                         }`}
-                       >
-                         {f.toUpperCase()}
-                       </button>
-                     ))}
-                   </div>
-                 </div>
-               </div>
-
-            {projUpdates.length > 0 && (
-              <div className="relative">
-                <div className="flex items-start gap-2 overflow-x-auto pb-4 no-scrollbar">
-                  <button 
-                    onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
-                    className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-widest vertical-text hover:bg-secondary/50 transition-all group"
-                  >
-                    <div className="flex items-center gap-1.5 transform -rotate-90 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                       {isTimelineCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                    </div>
-                    Timeline
-                  </button>
-                  
-                  {isTimelineCollapsed ? (
-                    <div className="flex flex-1 items-center gap-3 py-1 cursor-pointer" onClick={() => setIsTimelineCollapsed(false)}>
-                       <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-[11px] font-bold text-muted-foreground shadow-sm hover:border-primary/40 transition-all">
-                         <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                         {projUpdates.filter(u => timelineFilter === "all" || u.category === timelineFilter).length} update{projUpdates.length !== 1 ? 's' : ''} in timeline
-                         <ChevronRight size={10} className="ml-1" />
-                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-3 min-h-[80px]">
-                      {projUpdates
-                        .filter(u => timelineFilter === "all" || u.category === timelineFilter)
-                        .slice().reverse().map((u, idx) => (
-                        <div 
-                          key={u.id} 
-                          className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${
-                            u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
-                            u.category === "Cadence" ? "border-orange-200/60 hover:border-orange-400 hover:shadow-orange-500/5 translate-y-0" :
-                            "border-blue-200/60 hover:border-blue-400 hover:shadow-blue-500/5 translate-y-0"
+              <div className="flex items-center justify-between mb-2 px-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Filters</h4>
+                  <div className="flex items-center gap-1.5 ml-2">
+                    {["all", "Internal", "Sales", "Cadence"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setTimelineFilter(f)}
+                        className={`px-2.5 py-0.5 rounded-full text-[9px] font-extrabold transition-all border ${timelineFilter === f
+                          ? f === "Internal" ? "bg-blue-500 border-blue-500 text-white" :
+                            f === "Sales" ? "bg-emerald-500 border-emerald-500 text-white" :
+                              f === "Cadence" ? "bg-orange-500 border-orange-500 text-white" :
+                                "bg-foreground border-foreground text-background"
+                          : "bg-secondary/50 border-border/50 text-muted-foreground hover:border-primary/30"
                           }`}
-                        >
-                          <div className="mb-2 flex items-center justify-between">
-                            <div className={`flex items-center gap-1.5 text-[10px] font-bold ${
-                              u.category === "Sales" ? "text-emerald-600" :
-                              u.category === "Cadence" ? "text-orange-600" :
-                              "text-blue-600"
-                            }`}>
-                              <Calendar size={10} />
-                              {new Date(u.activity_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                              <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider ${
-                                u.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
-                                u.category === "Cadence" ? "bg-orange-100 text-orange-700" :
-                                "bg-blue-100 text-blue-700"
-                              }`}>
-                                {u.category || "Internal"}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                               <button 
-                                 onClick={() => {
-                                   setUploadingUpdateId(u.id);
-                                   tileFileInputRef.current?.click();
-                                 }}
-                                 className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
-                                 disabled={uploadingUpdateId === u.id}
-                                 title="Attach document"
-                               >
-                                 {uploadingUpdateId === u.id ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
-                               </button>
-                               <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
-                                 Manual
-                               </span>
-                            </div>
-                          </div>
-                          <p className="text-xs text-foreground line-clamp-3 leading-relaxed mb-2">
-                            {u.content}
-                          </p>
-                          
-                          {u.file_path && (
-                             <a 
-                               href={`/${u.file_path}`} 
-                               target="_blank" 
-                               rel="noopener noreferrer"
-                               className="mt-auto flex items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10"
-                               title={u.file_name}
-                             >
-                                <LinkIcon size={8} />
-                                <span className="truncate max-w-[150px]">{u.file_name}</span>
-                             </a>
-                          )}
-
-                          {idx !== 0 && (
-                             <div className="absolute -left-3 top-1/2 h-[1px] w-3 bg-border group-hover:bg-primary/20" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                      >
+                        {f.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            )}
+
+              {projUpdates.length > 0 && (
+                <div className="relative">
+                  <div className="flex items-start gap-2 overflow-x-auto pb-4 no-scrollbar">
+                    <button
+                      onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
+                      className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-widest vertical-text hover:bg-secondary/50 transition-all group"
+                    >
+                      <div className="flex items-center gap-1.5 transform -rotate-90 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {isTimelineCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                      </div>
+                      Timeline
+                    </button>
+
+                    {isTimelineCollapsed ? (
+                      <div className="flex flex-1 items-center gap-3 py-1 cursor-pointer" onClick={() => setIsTimelineCollapsed(false)}>
+                        <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card px-4 py-1.5 text-[11px] font-bold text-muted-foreground shadow-sm hover:border-primary/40 transition-all">
+                          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                          {projUpdates.filter(u => timelineFilter === "all" || u.category === timelineFilter).length} update{projUpdates.length !== 1 ? 's' : ''} in timeline
+                          <ChevronRight size={10} className="ml-1" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3 min-h-[80px]">
+                        {projUpdates
+                          .filter(u => timelineFilter === "all" || u.category === timelineFilter)
+                          .slice().reverse().map((u, idx) => (
+                            <div
+                              key={u.id}
+                              className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
+                                u.category === "Cadence" ? "border-orange-200/60 hover:border-orange-400 hover:shadow-orange-500/5 translate-y-0" :
+                                  "border-blue-200/60 hover:border-blue-400 hover:shadow-blue-500/5 translate-y-0"
+                                }`}
+                            >
+                              <div className="mb-2 flex items-center justify-between">
+                                <div className={`flex items-center gap-1.5 text-[10px] font-bold ${u.category === "Sales" ? "text-emerald-600" :
+                                  u.category === "Cadence" ? "text-orange-600" :
+                                    "text-blue-600"
+                                  }`}>
+                                  <Calendar size={10} />
+                                  {new Date(u.activity_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                                  <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider ${u.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
+                                    u.category === "Cadence" ? "bg-orange-100 text-orange-700" :
+                                      "bg-blue-100 text-blue-700"
+                                    }`}>
+                                    {u.category || "Internal"}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => {
+                                      setUploadingUpdateId(u.id);
+                                      tileFileInputRef.current?.click();
+                                    }}
+                                    className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                                    disabled={uploadingUpdateId === u.id}
+                                    title="Attach document"
+                                  >
+                                    {uploadingUpdateId === u.id ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
+                                  </button>
+                                  <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
+                                    Manual
+                                  </span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-foreground line-clamp-3 leading-relaxed mb-2">
+                                {u.content}
+                              </p>
+
+                              {u.file_path && (
+                                <a
+                                  href={apiUrl(`/api/files/${u.file_path}?download=${encodeURIComponent(u.file_name || "file")}`)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-auto flex items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10"
+                                  title={u.file_name}
+                                >
+                                  <LinkIcon size={8} />
+                                  <span className="truncate max-w-[150px]">{u.file_name}</span>
+                                </a>
+                              )}
+
+                              {idx !== 0 && (
+                                <div className="absolute -left-3 top-1/2 h-[1px] w-3 bg-border group-hover:bg-primary/20" />
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Hidden Input for Tile Upload */}
-            <input 
-              type="file" 
-              ref={tileFileInputRef} 
-              onChange={(e) => handleUploadFile(e, uploadingUpdateId || undefined)} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={tileFileInputRef}
+              onChange={(e) => handleUploadFile(e, uploadingUpdateId || undefined)}
+              className="hidden"
             />
 
             {/* Milestone Tracker */}
@@ -958,9 +959,9 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
                         </td>
                         <td className="px-3 py-2 text-foreground min-w-[200px] max-w-[400px] whitespace-normal break-words">
-                          <InlineEdit 
-                            value={m.description || ""} 
-                            onSave={(v) => updateMilestone(m.id, "description", v, m.description)} 
+                          <InlineEdit
+                            value={m.description || ""}
+                            onSave={(v) => updateMilestone(m.id, "description", v, m.description)}
                             savedKey={savedField === `${m.id}-description`}
                             multiline
                           />
@@ -1006,7 +1007,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                           </div>
                         </td>
                         <td className="px-3 py-2">
-                            <button
+                          <button
                             onClick={() => updateMilestone(m.id, "blocker", !m.blocker, m.blocker)}
                             className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${m.blocker ? "bg-destructive/15 text-destructive" : "bg-secondary text-muted-foreground"}`}
                           >
@@ -1108,13 +1109,13 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                     </div>
                     <div className="overflow-x-auto pb-6 no-scrollbar min-h-[400px]">
                       <div className="flex flex-col items-center justify-start min-w-max p-4">
-                        {(hierarchyChildrenByManager.__root__ || []).map((root, idx, arr) => 
+                        {(hierarchyChildrenByManager.__root__ || []).map((root, idx, arr) =>
                           renderHierarchyNode(root.id, new Set(), idx === 0, idx === arr.length - 1, false, 0)
                         )}
                         {(hierarchyChildrenByManager.__root__ || []).length === 0 && (
                           <div className="flex flex-col items-center justify-center py-12 text-center w-full">
                             <div className="rounded-full bg-secondary p-3 mb-2">
-                               <AlertTriangle size={20} className="text-muted-foreground" />
+                              <AlertTriangle size={20} className="text-muted-foreground" />
                             </div>
                             <p className="text-xs text-muted-foreground max-w-[180px]">No root members found. Set at least one person with no manager in Hierarchy Settings.</p>
                           </div>
@@ -1237,11 +1238,10 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                       <button
                         key={f}
                         onClick={() => setDocumentFilter(f)}
-                        className={`px-2 py-0.5 rounded text-[8px] font-bold transition-all ${
-                          documentFilter === f
-                            ? "bg-foreground text-background"
-                            : "text-muted-foreground hover:bg-secondary"
-                        }`}
+                        className={`px-2 py-0.5 rounded text-[8px] font-bold transition-all ${documentFilter === f
+                          ? "bg-foreground text-background"
+                          : "text-muted-foreground hover:bg-secondary"
+                          }`}
                       >
                         {f.toUpperCase()}
                       </button>
@@ -1249,29 +1249,28 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                   <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border mr-2">
-                      {(["Internal", "Sales", "Cadence"] as const).map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => setUploadCategory(cat)}
-                          className={`px-2 py-0.5 text-[8px] font-extrabold rounded transition-all ${
-                            uploadCategory === cat
-                              ? cat === "Internal" ? "bg-blue-500 text-white" :
-                                cat === "Sales" ? "bg-emerald-500 text-white" :
-                                "bg-orange-500 text-white"
-                              : "text-muted-foreground hover:bg-secondary/50"
+                  <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border mr-2">
+                    {(["Internal", "Sales", "Cadence"] as const).map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setUploadCategory(cat)}
+                        className={`px-2 py-0.5 text-[8px] font-extrabold rounded transition-all ${uploadCategory === cat
+                          ? cat === "Internal" ? "bg-blue-500 text-white" :
+                            cat === "Sales" ? "bg-emerald-500 text-white" :
+                              "bg-orange-500 text-white"
+                          : "text-muted-foreground hover:bg-secondary/50"
                           }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                   <button 
-                    onClick={() => fileInputRef.current?.click()} 
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading}
                     className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
                   >
-                    {isUploading ? <Loader2 size={12} className="animate-spin" /> : <FileUp size={14} />} 
+                    {isUploading ? <Loader2 size={12} className="animate-spin" /> : <FileUp size={14} />}
                     Upload File
                   </button>
                   <input type="file" ref={fileInputRef} onChange={(e) => {
@@ -1282,8 +1281,8 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         .then(() => toast.success("File uploaded"))
                         .catch(() => toast.error("Upload failed"))
                         .finally(() => {
-                           setIsUploading(false);
-                           if (fileInputRef.current) fileInputRef.current.value = "";
+                          setIsUploading(false);
+                          if (fileInputRef.current) fileInputRef.current.value = "";
                         });
                     }
                   }} className="hidden" />
@@ -1314,11 +1313,10 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                           </div>
                         </td>
                         <td className="px-4 py-2 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase ${
-                            doc.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
+                          <span className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase ${doc.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
                             doc.category === "Cadence" ? "bg-orange-100 text-orange-700" :
-                            "bg-blue-100 text-blue-700"
-                          }`}>
+                              "bg-blue-100 text-blue-700"
+                            }`}>
                             {doc.category || "Internal"}
                           </span>
                         </td>
@@ -1326,7 +1324,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                         <td className="px-4 py-2 text-muted-foreground">{(doc.size / 1024 / 1024).toFixed(2)} MB</td>
                         <td className="px-4 py-2 text-muted-foreground">{new Date(doc.created_at).toLocaleDateString()}</td>
                         <td className="px-4 py-2 text-right">
-                          <a href={`/${doc.path}`} download={doc.name} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
+                          <a href={apiUrl(`/api/files/${doc.path}?download=${encodeURIComponent(doc.name)}`)} download={doc.name} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
                             <Download size={12} />
                           </a>
                         </td>
@@ -1430,7 +1428,7 @@ const Projects = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
           </ModalOverlay>
         )}
       </div>
-    </AppLayout>
+    </AppLayout >
   );
 };
 

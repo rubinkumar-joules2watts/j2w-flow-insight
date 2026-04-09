@@ -1,21 +1,20 @@
-import { Sun, Moon } from "lucide-react";
+interface TopbarProps {
+  title: string;
+}
 
-const Topbar = ({ title, themeToggle }: { title: string; themeToggle?: { dark: boolean; toggle: () => void } }) => (
-  <header
-    className="sticky top-0 z-40 flex h-13 items-center justify-between border-b border-border px-6 bg-background/85"
-    style={{ backdropFilter: "blur(8px)" }}
-  >
-    <h1 className="text-sm font-medium text-foreground">{title}</h1>
-    {themeToggle && (
-      <button
-        onClick={themeToggle.toggle}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-        title={themeToggle.dark ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {themeToggle.dark ? <Sun size={16} /> : <Moon size={16} />}
-      </button>
-    )}
-  </header>
-);
+const Topbar = ({ title }: TopbarProps) => {
+  return (
+    <header className="sticky top-0 z-40 border-b border-slate-700 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 shadow-2xl">
+      {/* Main header bar */}
+      <div className="flex h-20 items-center px-8">
+        {/* Title */}
+        <div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">{title}</h1>
+          <p className="text-xs text-slate-500 font-light tracking-widest">DELIVERY MANAGEMENT</p>
+        </div>
+      </div>
+    </header>
+  );
+};
 
 export default Topbar;

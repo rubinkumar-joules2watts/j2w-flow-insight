@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/lib/api";
 
 export const writeAuditLog = async (
   tableName: string,
@@ -8,7 +8,7 @@ export const writeAuditLog = async (
   newValues?: Record<string, unknown> | null,
   changedFields?: string[]
 ) => {
-  await supabase.from("audit_log").insert({
+  await api.from("audit_log").insert({
     table_name: tableName,
     record_id: recordId,
     action,

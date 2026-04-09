@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
+import FilterSelect from "@/components/common/FilterSelect";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
-import { supabase } from "@/integrations/supabase/client";
+import { api, apiUrl } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Activity, CheckCircle, AlertTriangle, AlertOctagon, FileText, Users, X } from "lucide-react";
+import { Zap, AlertTriangle, AlertOctagon, AlertCircle, FileText, Users, X } from "lucide-react";
 import j2wLogo from "@/assets/j2w-logo.png";
 
-type OverviewTileKey = "done" | "amber" | "red" | "invoices" | "invoicesPending" | "team";
+type OverviewTileKey = "active" | "ontrack" | "atrisk" | "blocked";
+
+interface DashboardCounters {
+  active_projects: number;
+  on_track_projects: number;
+  at_risk_projects: number;
+  blocked_projects: number;
+}
 
 const flagColor = (f: string | null) => {
   if (f === "green") return "bg-success";
@@ -19,17 +27,15 @@ const flagColor = (f: string | null) => {
 };
 
 const statusBadge = (s: string | null) => {
-  const base = "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium";
-  if (s === "Completed") return `${base} bg-success/15 text-success`;
-  if (s === "In Progress") return `${base} bg-primary/15 text-primary`;
-  if (s === "On Track") return `${base} bg-success/15 text-success`;
-  if (s === "Delayed") return `${base} bg-warning/15 text-warning`;
-  if (s === "Blocked") return `${base} bg-destructive/15 text-destructive`;
-  if (s === "Planning") return `${base} bg-muted text-muted-foreground`;
-  return `${base} bg-muted text-muted-foreground`;
+  const base = "inline-flex items-center rounded-full px-3 py-1 text-xs font-bold";
+  if (s === "On Track") return `${base} bg-emerald-400/20 text-emerald-400 border border-emerald-400/30`;
+  if (s === "At Risk") return `${base} bg-amber-400/20 text-amber-400 border border-amber-400/30`;
+  if (s === "Blocked") return `${base} bg-red-400/20 text-red-400 border border-red-400/30`;
+  if (s === "Completed") return `${base} bg-blue-400/20 text-blue-400 border border-blue-400/30`;
+  return `${base} bg-slate-500/20 text-slate-400 border border-slate-500/30`;
 };
 
-const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () => void } }) => {
+const Overview = () => {
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
   const { data: milestones } = useMilestones();
@@ -41,17 +47,43 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
   const [clientFilter, setClientFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectSearch, setProjectSearch] = useState("");
+  const [counters, setCounters] = useState<DashboardCounters>({
+    active_projects: 0,
+    on_track_projects: 0,
+    at_risk_projects: 0,
+    blocked_projects: 0,
+  });
+
+  // Fetch dashboard counters
+  useEffect(() => {
+    const fetchCounters = async () => {
+      try {
+        const response = await fetch(apiUrl("/api/dashboard/counters"), {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setCounters(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch dashboard counters:", error);
+      }
+    };
+
+    fetchCounters();
+  }, []);
 
   // Realtime: auto-refresh all metrics when any table changes
   useEffect(() => {
-    const channel = supabase.channel("overview-realtime")
+    const channel = api.channel("overview-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "team_members" }, () => qc.invalidateQueries({ queryKey: ["team_members"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => qc.invalidateQueries({ queryKey: ["clients"] }))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { api.removeChannel(channel); };
   }, [qc]);
 
   const filteredProjects = (projects || []).filter((p) => {
@@ -150,112 +182,87 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
 
   return (
     <AppLayout>
-      <Topbar title="Overview" themeToggle={themeToggle} />
-
-      {/* Hero Strip */}
-      <div className="relative h-28 overflow-hidden border-b border-border">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-[0.18]"
-          style={{ backgroundImage: "url(/images/fractal-bg.jpg)" }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: "linear-gradient(90deg, hsl(var(--background)) 0%, hsl(var(--background) / 0.2) 100%)" }}
-        />
-        <div className="relative z-10 flex h-full items-center px-6 gap-5">
-          <img src={j2wLogo} alt="J2W" className="h-10 w-10 object-contain" />
-          <div className="h-10 w-px bg-border" />
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Delivery Tracker</h2>
-            <p className="text-xs text-muted-foreground font-medium">Tech Team · Joules to Watts</p>
-          </div>
-          <div className="ml-auto flex gap-6">
-            {[
-              { label: "Active Projects", value: activeProjects.length },
-              { label: "Milestones", value: totalMilestones },
-              { label: "Avg Completion", value: `${avgCompletion}%` },
-              { label: "Active Blockers", value: blockerCount },
-            ].map((s) => (
-              <div key={s.label} className="text-right">
-                <p className="text-xl font-bold text-foreground">{s.value}</p>
-                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{s.label}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <Topbar title="Overview" />
 
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Filters */}
-        <div className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-card p-3">
-          <select
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+          <FilterSelect
             value={clientFilter}
-            onChange={(e) => setClientFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Clients</option>
-            {(clients || []).map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
-          >
-            <option value="all">All Status</option>
-            {["Planning", "On Track", "In Progress", "Delayed", "Blocked", "Completed"].map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <input
-            value={projectSearch}
-            onChange={(e) => setProjectSearch(e.target.value)}
-            placeholder="Search Project"
-            className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-foreground outline-none"
+            onChange={setClientFilter}
+            label="Client"
+            placeholder="All Clients"
+            options={[
+              { label: "All Clients", value: "all" },
+              ...((clients || []).map((c) => ({ label: c.name, value: c.id })))
+            ]}
           />
+          <FilterSelect
+            value={statusFilter}
+            onChange={setStatusFilter}
+            label="Status"
+            placeholder="All Status"
+            options={[
+              { label: "All Status", value: "all" },
+              { label: "On Track", value: "On Track" },
+              { label: "At Risk", value: "At Risk" },
+              { label: "Blocked", value: "Blocked" },
+              { label: "Completed", value: "Completed" }
+            ]}
+          />
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+              Search
+            </label>
+            <input
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              placeholder="Search Project Name"
+              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+            />
+          </div>
         </div>
 
-        {/* KPI Row */}
-        <div className="grid grid-cols-6 gap-3">
+        {/* KPI Row - Dashboard Counters */}
+        <div className="grid grid-cols-4 gap-3">
           {[
-            { key: "done" as OverviewTileKey, icon: CheckCircle, label: "Milestones Done", value: doneCount, color: "text-success" },
-            { key: "amber" as OverviewTileKey, icon: AlertTriangle, label: "In Progress (Amber)", value: amberCount, color: "text-warning" },
-            { key: "red" as OverviewTileKey, icon: AlertOctagon, label: "Critical / Red", value: redCount, color: "text-destructive" },
-            { key: "invoices" as OverviewTileKey, icon: FileText, label: "Invoices Raised", value: invoicesRaised, color: "text-primary" },
-            { key: "invoicesPending" as OverviewTileKey, icon: FileText, label: "Invoices Pending", value: invoicesPending, color: "text-warning" },
-            { key: "team" as OverviewTileKey, icon: Users, label: "Team Deployed", value: teamDeployed, color: "text-accent" },
+            { key: "active" as OverviewTileKey, icon: Zap, label: "Active Projects", value: counters.active_projects, color: "text-emerald-400", bgColor: "bg-emerald-400/10 border-emerald-400/30" },
+            { key: "ontrack" as OverviewTileKey, icon: AlertTriangle, label: "On Track Projects", value: counters.on_track_projects, color: "text-amber-400", bgColor: "bg-amber-400/10 border-amber-400/30" },
+            { key: "atrisk" as OverviewTileKey, icon: AlertOctagon, label: "At Risk Projects", value: counters.at_risk_projects, color: "text-red-400", bgColor: "bg-red-400/10 border-red-400/30" },
+            { key: "blocked" as OverviewTileKey, icon: AlertCircle, label: "Blocked Projects", value: counters.blocked_projects, color: "text-blue-400", bgColor: "bg-blue-400/10 border-blue-400/30" },
           ].map((kpi) => (
             <button
               key={kpi.label}
               onClick={() => setActiveTile(kpi.key)}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-secondary/40"
+              className={`flex flex-col items-start gap-3 rounded-lg border ${kpi.bgColor} p-5 text-left transition-all hover:scale-105 hover:shadow-lg`}
             >
-              <kpi.icon size={20} className={kpi.color} />
+              <div className={`p-2 rounded-lg ${kpi.bgColor}`}>
+                <kpi.icon size={24} className={kpi.color} />
+              </div>
               <div>
-                <p className="text-2xl font-bold text-foreground">{kpi.value}</p>
-                <p className="text-xs text-muted-foreground font-medium">{kpi.label}</p>
+                <p className="text-3xl font-bold text-white">{kpi.value}</p>
+                <p className="text-xs text-muted-foreground font-medium mt-1">{kpi.label}</p>
               </div>
             </button>
           ))}
         </div>
 
         {/* Project Status Table */}
-        <div className="rounded-lg border border-border bg-card">
-          <div className="border-b border-border px-4 py-3">
-            <h3 className="text-sm font-bold text-foreground">Project Status</h3>
+        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
+          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
+            <h3 className="text-lg font-bold text-white">Project Status</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  {["Client", "Project", "Type", "Manager", "Resources", "Progress", "Status", "Revenue", "Invoice"].map((h) => (
-                    <th key={h} className="px-4 py-2.5 font-medium">{h}</th>
+                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
+                  {["Client", "Project", "Type", "Manager", "Resources", "Status", "Invoice"].map((h) => (
+                    <th key={h} className="px-6 py-4 font-bold text-white tracking-wide uppercase text-xs">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredProjects.map((p) => {
+                {filteredProjects.map((p, idx) => {
                   const client = clients?.find((c) => c.id === p.client_id);
                   const prog = getProjectMilestoneProgress(p.id);
                   const pctWidth = prog.total ? (prog.done / prog.total) * 100 : 0;
@@ -263,35 +270,27 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                   const hasRaisedInvoice = pMs.some((m) => m.invoice_status === "Raised");
                   const raisedInvoices = pMs.filter((m) => m.invoice_status === "Raised").length;
                   const pendingInvoices = pMs.filter((m) => m.invoice_status === "Pending").length;
+                  const isEvenRow = idx % 2 === 0;
                   return (
                     <tr
                       key={p.id}
                       onClick={() => navigate(`/projects?id=${p.id}`)}
-                      className="border-b border-border last:border-0 cursor-pointer transition-colors hover:bg-secondary/50"
+                      className={`border-b border-slate-700/50 cursor-pointer transition-all duration-200 ${
+                        isEvenRow ? "bg-slate-800/20" : "bg-transparent"
+                      } hover:bg-blue-600/15 last:border-0`}
                     >
-                      <td className="px-4 py-2.5 text-muted-foreground">{client?.name}</td>
-                      <td className="px-4 py-2.5 font-medium text-foreground">{p.name}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{p.service_type}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground">{p.delivery_manager}</td>
-                      <td className="px-4 py-2.5 text-muted-foreground max-w-[200px] truncate">{getProjectResources(p.id)}</td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-20 rounded-full bg-secondary">
-                            <div className="h-full rounded-full bg-primary" style={{ width: `${pctWidth}%` }} />
-                          </div>
-                          <span className="text-muted-foreground">{prog.done}/{prog.total}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5"><span className={statusBadge(p.status)}>{p.status}</span></td>
-                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                        <span className="font-medium text-foreground">{raisedInvoices}</span>
-                        <span className="text-muted-foreground">/{pMs.length || 0} raised</span>
+                      <td className="px-6 py-4 text-slate-300 font-medium">{client?.name}</td>
+                      <td className="px-6 py-4 font-bold text-white">{p.name}</td>
+                      <td className="px-6 py-4 text-slate-400">{p.service_type}</td>
+                      <td className="px-6 py-4 text-slate-400">{p.delivery_manager}</td>
+                      <td className="px-6 py-4 text-slate-400 min-w-[300px] break-words">{getProjectResources(p.id)}</td>
+                      <td className="px-6 py-4"><span className={statusBadge(p.status)}>{p.status}</span></td>
+                      <td className="px-6 py-4 text-slate-300 whitespace-nowrap">
+                        <span className="font-bold text-white">{raisedInvoices}</span>
+                        <span className="text-slate-400">/{pMs.length || 0} raised</span>
                         {pendingInvoices > 0 && (
-                          <span className="ml-1 text-warning">({pendingInvoices} pending)</span>
+                          <span className="ml-2 text-amber-400 font-medium">({pendingInvoices} pending)</span>
                         )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-block h-2 w-2 rounded-full ${hasRaisedInvoice ? "bg-success" : "bg-muted-foreground"}`} />
                       </td>
                     </tr>
                   );
@@ -302,29 +301,48 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
         </div>
 
         {/* Bottom Row */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {/* Milestone Completion by Client */}
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-bold text-foreground">Milestone Completion by Client</h3>
-            <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 0, right: 12 }}>
-                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} width={60} />
+          <div className="rounded-lg border border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800/50 p-6 shadow-lg">
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-white">Milestone Completion by Client</h3>
+              <p className="text-xs text-slate-400 mt-1">Performance across all clients</p>
+            </div>
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 100, right: 30, top: 10, bottom: 10 }}>
+                <XAxis
+                  type="number"
+                  domain={[0, 100]}
+                  tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))", fontWeight: 500 }}
+                  width={95}
+                />
                 <Tooltip
-                  contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 11, color: "hsl(var(--foreground))" }}
+                  contentStyle={{
+                    background: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: "hsl(var(--foreground))",
+                    padding: "8px 12px"
+                  }}
                   formatter={(v: number) => [`${v}%`, "Completion"]}
                 />
-                <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="pct" radius={[0, 8, 8, 0]} fill="url(#colorGradient)">
                   {clientCompletionData.map((_, i) => (
-                    <Cell key={i} fill="hsl(72,100%,64%)" />
+                    <Cell key={i} fill={`hsl(${217 + (i % 5) * 10}, 91%, ${50 + (i % 3) * 5}%)`} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Active Blockers */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          {/* Active Blockers - COMMENTED OUT */}
+          {/* <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-bold text-foreground">Active Blockers</h3>
             <div className="space-y-2 max-h-[180px] overflow-y-auto">
               {activeBlockers.length === 0 && (
@@ -340,10 +358,10 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
-          {/* Invoice Summary */}
-          <div className="rounded-lg border border-border bg-card p-4">
+          {/* Invoice Summary - COMMENTED OUT */}
+          {/* <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-3 text-sm font-bold text-foreground">Invoice Summary</h3>
             <div className="flex items-center gap-3 mb-3">
               <div className="flex-1">
@@ -372,7 +390,7 @@ const Overview = ({ themeToggle }: { themeToggle?: { dark: boolean; toggle: () =
                 <p className="text-xs text-muted-foreground">No upcoming pending invoices this month.</p>
               )}
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
 
