@@ -208,18 +208,18 @@ const Projects = () => {
   }, [qc, milestones]);
 
   const updateMilestoneViaAPI = useCallback(async (id: string, field: string, value: string) => {
-    const currentDate = new Date().toISOString().split("T")[0];
+    const milestone = projMilestones?.find((m) => m.id === id);
     const payload: Record<string, unknown> = {};
 
     if (field === "client_signoff_status") {
       payload.client_signoff_status = value;
       if (value === "Done") {
-        payload.signedoff_date = currentDate;
+        payload.signedoff_date = milestone?.actual_end_eta || null;
       }
     } else if (field === "invoice_status") {
       payload.invoice_status = value;
       if (value === "Done") {
-        payload.invoice_raised_date = currentDate;
+        payload.invoice_raised_date = milestone?.actual_end_eta || null;
       }
     }
 
