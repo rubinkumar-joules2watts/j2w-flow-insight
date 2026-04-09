@@ -19,7 +19,7 @@ const FilterSelect: React.FC<FilterSelectProps> = ({
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+        <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
           {label}
         </label>
       )}
@@ -27,20 +27,20 @@ const FilterSelect: React.FC<FilterSelectProps> = ({
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
+          className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 font-medium transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
         >
           <option value="" disabled selected hidden>
             {placeholder}
           </option>
           {options.map((option) => (
-            <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+            <option key={option.value} value={option.value} className="bg-white text-gray-900">
               {option.label}
             </option>
           ))}
         </select>
         <ChevronDown
           size={16}
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
         />
       </div>
     </div>

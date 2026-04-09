@@ -20,9 +20,9 @@ export const FormInput = ({
   disabled?: boolean;
 }) => (
   <div>
-    <label className="mb-2 block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+    <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
       {label}
-      {required && <span className="text-red-400 ml-1">*</span>}
+      {required && <span className="text-red-500 ml-1">*</span>}
     </label>
     <input
       type={type}
@@ -30,7 +30,7 @@ export const FormInput = ({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
-      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-100 outline-none transition-all hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 outline-none transition-all hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
     />
   </div>
 );
@@ -52,15 +52,15 @@ export const FormSelect = ({
   disabled?: boolean;
 }) => (
   <div>
-    <label className="mb-2 block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+    <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
       {label}
-      {required && <span className="text-red-400 ml-1">*</span>}
+      {required && <span className="text-red-500 ml-1">*</span>}
     </label>
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       disabled={disabled}
-      className="w-full appearance-none rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-100 outline-none transition-all hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 outline-none transition-all hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       {options.map((opt) => (
         <option key={opt} value={opt}>
@@ -91,10 +91,10 @@ export const FormRange = ({
 }) => (
   <div>
     <div className="mb-2 flex items-center justify-between">
-      <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
         {label}
       </label>
-      <span className="text-xs font-semibold text-blue-400">
+      <span className="text-xs font-semibold text-blue-600">
         {value}
         {unit}
       </span>
@@ -126,17 +126,17 @@ export const FormCheckboxGroup = ({
   maxHeight?: string;
 }) => (
   <div>
-    <label className="mb-2 block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+    <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
       {label}
     </label>
-    <div className={`${maxHeight} overflow-y-auto space-y-2 rounded-lg border border-slate-700 bg-slate-800/50 p-3`}>
+    <div className={`${maxHeight} overflow-y-auto space-y-2 rounded-lg border border-gray-300 bg-gray-50 p-3`}>
       {items.length === 0 ? (
-        <p className="text-xs text-slate-400 py-2">No items available</p>
+        <p className="text-xs text-gray-500 py-2">No items available</p>
       ) : (
         items.map((item) => (
           <label
             key={item.id}
-            className="flex items-center gap-2 text-xs text-slate-100 cursor-pointer hover:text-slate-50 transition-colors"
+            className="flex items-center gap-2 text-xs text-gray-900 cursor-pointer hover:text-gray-700 transition-colors"
           >
             <input
               type="checkbox"
@@ -148,7 +148,7 @@ export const FormCheckboxGroup = ({
                     : selectedIds.filter((id) => id !== item.id)
                 )
               }
-              className="rounded border-slate-600 accent-blue-500 cursor-pointer"
+              className="rounded border-gray-400 accent-blue-500 cursor-pointer"
             />
             {item.name}
           </label>
@@ -177,9 +177,9 @@ export const FormTextarea = ({
   disabled?: boolean;
 }) => (
   <div>
-    <label className="mb-2 block text-xs font-semibold text-slate-300 uppercase tracking-wide">
+    <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
       {label}
-      {required && <span className="text-red-400 ml-1">*</span>}
+      {required && <span className="text-red-500 ml-1">*</span>}
     </label>
     <textarea
       value={value}
@@ -187,7 +187,7 @@ export const FormTextarea = ({
       placeholder={placeholder}
       rows={rows}
       disabled={disabled}
-      className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-slate-100 outline-none transition-all hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed resize-none"
+      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 outline-none transition-all hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed resize-none"
     />
   </div>
 );
@@ -214,14 +214,14 @@ export const FormModal = ({
       onClick={onClose}
     >
       <div
-        className={`${maxWidth} w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl`}
+        className={`${maxWidth} w-full rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
+          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 transition-colors"
+            className="text-gray-500 hover:text-gray-700 transition-colors"
           >
             <X size={18} />
           </button>
@@ -250,7 +250,7 @@ export const FormActions = ({
     <button
       onClick={onCancel}
       disabled={isLoading}
-      className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
     >
       Cancel
     </button>
@@ -271,16 +271,16 @@ export const FormActions = ({
 /* ===== Divider ===== */
 export const FormDivider = ({ label }: { label?: string }) => {
   if (!label) {
-    return <div className="h-px bg-slate-700" />;
+    return <div className="h-px bg-gray-300" />;
   }
 
   return (
     <div className="flex items-center gap-3">
-      <div className="flex-1 h-px bg-slate-700" />
-      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+      <div className="flex-1 h-px bg-gray-300" />
+      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
         {label}
       </span>
-      <div className="flex-1 h-px bg-slate-700" />
+      <div className="flex-1 h-px bg-gray-300" />
     </div>
   );
 };
@@ -295,7 +295,7 @@ export const FormSection = ({
 }) => (
   <div>
     {title && (
-      <h4 className="mb-3 text-xs font-semibold text-slate-300 uppercase tracking-wide">
+      <h4 className="mb-3 text-xs font-semibold text-gray-700 uppercase tracking-wide">
         {title}
       </h4>
     )}

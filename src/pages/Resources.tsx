@@ -138,16 +138,16 @@ const Resources = () => {
     <AppLayout>
       <Topbar title="Resource Allocation" />
       <div className="p-6 space-y-5 animate-fade-in">
-        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+            <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
               Search
             </label>
             <input
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
               placeholder="Search Member Name"
-              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 font-medium placeholder-gray-400 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
           <FilterSelect
@@ -177,7 +177,7 @@ const Resources = () => {
 
         {/* Team Overview - Dashboard Style */}
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-bold text-white">Team Overview</h3>
+          <h3 className="text-sm font-bold text-gray-900">Team Overview</h3>
           <button onClick={() => setShowAddMember(true)} className="flex items-center gap-1 rounded-lg bg-blue-500/20 border border-blue-500/40 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all">
             <Plus size={14} /> Add Member
           </button>
@@ -186,20 +186,20 @@ const Resources = () => {
           {filteredMembers.map((m) => {
             const memberProjects = getProjectsForMember(m.id);
             return (
-              <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-slate-700/50 bg-gradient-to-b from-slate-800/50 to-slate-900/30 p-4 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all">
+              <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-gray-300/50 bg-gradient-to-b from-gray-100/50 to-gray-50/30 p-4 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
                     {m.initials}
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-slate-100">{m.name}</p>
-                    <p className="text-[10px] text-slate-400">{m.role}</p>
+                    <p className="text-xs font-bold text-gray-900">{m.name}</p>
+                    <p className="text-[10px] text-gray-500">{m.role}</p>
                   </div>
                 </div>
                 <div className="mb-2">
-                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
                     <span>Engagement</span>
-                    <span className="font-bold text-slate-200">{m.engagement_pct}%</span>
+                    <span className="font-bold text-gray-800">{m.engagement_pct}%</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-slate-700/50">
                     <div className={`h-full rounded-full ${engagementColor(m.engagement_pct || 0)}`} style={{ width: `${m.engagement_pct}%` }} />
@@ -207,11 +207,11 @@ const Resources = () => {
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {memberProjects.map((p) => (
-                    <span key={p} className="rounded-full bg-slate-700/50 px-1.5 py-0.5 text-[9px] text-slate-300 border border-slate-600/30">{p}</span>
+                    <span key={p} className="rounded-full bg-slate-700/50 px-1.5 py-0.5 text-[9px] text-gray-700 border border-slate-600/30">{p}</span>
                   ))}
                 </div>
                 <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Member">
+                  <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Member">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -221,17 +221,17 @@ const Resources = () => {
         </div>
 
         {/* Allocation Matrix */}
-        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
-          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
-            <h3 className="text-lg font-bold text-white">Work Allocation Matrix</h3>
+        <div className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+          <div className="border-b border-gray-200 px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100/50">
+            <h3 className="text-lg font-bold text-gray-900">Work Allocation Matrix</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
-                  <th className="px-6 py-4 font-bold text-white sticky left-0 bg-gradient-to-r from-slate-800 to-slate-900 z-10 min-w-[200px]">Member</th>
+                <tr className="border-b border-gray-300 bg-white text-left">
+                  <th className="px-6 py-4 font-bold text-gray-900 sticky left-0 bg-white z-10 min-w-[200px]">Member</th>
                   {projects?.map((p) => (
-                    <th key={p.id} className="px-4 py-4 text-center font-bold text-white whitespace-nowrap tracking-wide uppercase text-xs">
+                    <th key={p.id} className="px-4 py-4 text-center font-bold text-gray-900 whitespace-nowrap tracking-wide uppercase text-xs border-l border-gray-200">
                       <span className="block truncate">{p.name}</span>
                     </th>
                   ))}
@@ -241,8 +241,8 @@ const Resources = () => {
                 {filteredMembers.map((m, idx) => {
                   const isEvenRow = idx % 2 === 0;
                   return (
-                    <tr key={m.id} className={`border-b border-slate-700/50 ${isEvenRow ? "bg-slate-800/20" : "bg-transparent"} hover:bg-blue-600/15 last:border-0 transition-all duration-200`}>
-                      <td className="px-6 py-4 text-white font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-slate-900 to-transparent">{m.name}</td>
+                    <tr key={m.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{m.name}</td>
                       {filteredProjects.map((p) => {
                         const isAssigned = assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id);
                         const isConfirming = confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id;
@@ -250,13 +250,13 @@ const Resources = () => {
                           <td key={p.id} className="px-4 py-4 text-center">
                             {isConfirming ? (
                               <div className="flex items-center justify-center gap-1">
-                                <button onClick={() => handleToggleAssignment(m.id, p.id)} className="text-emerald-400 hover:text-emerald-300"><Check size={16} /></button>
-                                <button onClick={() => setConfirmToggle(null)} className="text-slate-500 hover:text-slate-300"><X size={16} /></button>
+                                <button onClick={() => handleToggleAssignment(m.id, p.id)} className="text-emerald-600 hover:text-emerald-700"><Check size={16} /></button>
+                                <button onClick={() => setConfirmToggle(null)} className="text-gray-500 hover:text-gray-700"><X size={16} /></button>
                               </div>
                             ) : (
                               <button
                                 onClick={() => isAssigned ? setConfirmToggle({ memberId: m.id, projectId: p.id }) : handleToggleAssignment(m.id, p.id)}
-                                className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-slate-700 hover:bg-slate-600"}`}
+                                className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-gray-300 hover:bg-gray-400"}`}
                               >
                                 {isAssigned && <Check size={14} className="text-white font-bold" />}
                               </button>
@@ -273,8 +273,8 @@ const Resources = () => {
         </div>
 
         {/* Effort Chart - Dashboard Style */}
-        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6">
-          <h3 className="mb-4 text-sm font-bold text-white">Effort Tracking (Est. Hours/Week)</h3>
+        <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6">
+          <h3 className="mb-4 text-sm font-bold text-gray-900">Effort Tracking (Est. Hours/Week)</h3>
           <ResponsiveContainer width="100%" height={Math.max(200, effortData.length * 32)}>
             <BarChart data={effortData} layout="vertical" margin={{ left: 8, right: 16 }}>
               <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
@@ -288,16 +288,16 @@ const Resources = () => {
         </div>
 
         {/* Gantt Timeline */}
-        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
-          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
-            <h3 className="text-lg font-bold text-white">Work Allocation Timeline (2026)</h3>
+        <div className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
+          <div className="border-b border-gray-200 px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100/50">
+            <h3 className="text-lg font-bold text-gray-900">Work Allocation Timeline (2026)</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
-                  <th className="px-6 py-4 font-bold text-white sticky left-0 bg-gradient-to-r from-slate-800 to-slate-900 z-10 min-w-[200px]">Member</th>
-                  {months.map((m) => <th key={m} className="px-4 py-4 text-center font-bold text-white min-w-[80px] tracking-wide uppercase text-xs">{m}</th>)}
+                <tr className="border-b border-gray-300 bg-white text-left">
+                  <th className="px-6 py-4 font-bold text-gray-900 sticky left-0 bg-white z-10 min-w-[200px]">Member</th>
+                  {months.map((m) => <th key={m} className="px-4 py-4 text-center font-bold text-gray-900 min-w-[80px] tracking-wide uppercase text-xs border-l border-gray-200">{m}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -305,8 +305,8 @@ const Resources = () => {
                   const memberAssigns = assignments?.filter((a) => a.team_member_id === m.id) || [];
                   const isEvenRow = idx % 2 === 0;
                   return (
-                    <tr key={m.id} className={`border-b border-slate-700/50 ${isEvenRow ? "bg-slate-800/20" : "bg-transparent"} hover:bg-blue-600/15 last:border-0 transition-all duration-200`}>
-                      <td className="px-6 py-4 text-white font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-slate-900 to-transparent">{m.name}</td>
+                    <tr key={m.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{m.name}</td>
                       {months.map((_, mi) => {
                         const activeProject = memberAssigns.find((a) => {
                           if (!a.start_date && !a.end_date) return true; // always active if no dates
@@ -400,15 +400,15 @@ const Resources = () => {
           const member = members?.find((m) => m.id === confirmDeleteMember);
           if (!member) return null;
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteMember(null)}>
-              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteMember(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4">
-                  <h3 className="text-lg font-bold text-white">Delete Member</h3>
-                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{member.name}</span>?</p>
-                  <p className="mt-2 text-xs text-slate-400">This action will remove the member from all assigned projects and cannot be undone.</p>
+                  <h3 className="text-lg font-bold text-gray-900">Delete Member</h3>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{member.name}</span>?</p>
+                  <p className="mt-2 text-xs text-gray-500">This action will remove the member from all assigned projects and cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                  <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
                     Cancel
                   </button>
                   <button onClick={() => handleDeleteMember(confirmDeleteMember)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">

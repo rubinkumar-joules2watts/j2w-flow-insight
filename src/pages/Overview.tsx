@@ -28,11 +28,11 @@ const flagColor = (f: string | null) => {
 
 const statusBadge = (s: string | null) => {
   const base = "inline-flex items-center rounded-full px-3 py-1 text-xs font-bold";
-  if (s === "On Track") return `${base} bg-emerald-400/20 text-emerald-400 border border-emerald-400/30`;
-  if (s === "At Risk") return `${base} bg-amber-400/20 text-amber-400 border border-amber-400/30`;
-  if (s === "Blocked") return `${base} bg-red-400/20 text-red-400 border border-red-400/30`;
-  if (s === "Completed") return `${base} bg-blue-400/20 text-blue-400 border border-blue-400/30`;
-  return `${base} bg-slate-500/20 text-slate-400 border border-slate-500/30`;
+  if (s === "On Track") return `${base} bg-emerald-100 text-emerald-700 border border-emerald-300`;
+  if (s === "At Risk") return `${base} bg-amber-100 text-amber-700 border border-amber-300`;
+  if (s === "Blocked") return `${base} bg-red-100 text-red-700 border border-red-300`;
+  if (s === "Completed") return `${base} bg-blue-100 text-blue-700 border border-blue-300`;
+  return `${base} bg-gray-200 text-gray-700 border border-gray-300`;
 };
 
 const Overview = () => {
@@ -186,7 +186,7 @@ const Overview = () => {
 
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Filters */}
-        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-4">
           <FilterSelect
             value={clientFilter}
             onChange={setClientFilter}
@@ -211,14 +211,14 @@ const Overview = () => {
             ]}
           />
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+            <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
               Search
             </label>
             <input
               value={projectSearch}
               onChange={(e) => setProjectSearch(e.target.value)}
               placeholder="Search Project Name"
-              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 font-medium placeholder-gray-400 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
         </div>
@@ -226,38 +226,35 @@ const Overview = () => {
         {/* KPI Row - Dashboard Counters */}
         <div className="grid grid-cols-4 gap-3">
           {[
-            { key: "active" as OverviewTileKey, icon: Zap, label: "Active Projects", value: counters.active_projects, color: "text-emerald-400", bgColor: "bg-emerald-400/10 border-emerald-400/30" },
-            { key: "ontrack" as OverviewTileKey, icon: AlertTriangle, label: "On Track Projects", value: counters.on_track_projects, color: "text-amber-400", bgColor: "bg-amber-400/10 border-amber-400/30" },
-            { key: "atrisk" as OverviewTileKey, icon: AlertOctagon, label: "At Risk Projects", value: counters.at_risk_projects, color: "text-red-400", bgColor: "bg-red-400/10 border-red-400/30" },
-            { key: "blocked" as OverviewTileKey, icon: AlertCircle, label: "Blocked Projects", value: counters.blocked_projects, color: "text-blue-400", bgColor: "bg-blue-400/10 border-blue-400/30" },
+            { key: "active" as OverviewTileKey, icon: Zap, label: "Active Projects", value: counters.active_projects, color: "text-emerald-600", bgColor: "bg-emerald-100 border-emerald-300" },
+            { key: "ontrack" as OverviewTileKey, icon: AlertTriangle, label: "On Track Projects", value: counters.on_track_projects, color: "text-amber-600", bgColor: "bg-amber-100 border-amber-300" },
+            { key: "atrisk" as OverviewTileKey, icon: AlertOctagon, label: "At Risk Projects", value: counters.at_risk_projects, color: "text-red-600", bgColor: "bg-red-100 border-red-300" },
+            { key: "blocked" as OverviewTileKey, icon: AlertCircle, label: "Blocked Projects", value: counters.blocked_projects, color: "text-blue-600", bgColor: "bg-blue-100 border-blue-300" },
           ].map((kpi) => (
             <button
               key={kpi.label}
               onClick={() => setActiveTile(kpi.key)}
-              className={`flex flex-col items-start gap-3 rounded-lg border ${kpi.bgColor} p-5 text-left transition-all hover:scale-105 hover:shadow-lg`}
+              className={`flex items-center justify-between rounded-lg border ${kpi.bgColor} p-6 text-left transition-all hover:scale-105 hover:shadow-lg`}
             >
-              <div className={`p-2 rounded-lg ${kpi.bgColor}`}>
-                <kpi.icon size={24} className={kpi.color} />
+              <div className="flex-1">
+                <p className="text-sm text-gray-700 font-semibold">{kpi.label}</p>
               </div>
-              <div>
-                <p className="text-3xl font-bold text-white">{kpi.value}</p>
-                <p className="text-xs text-muted-foreground font-medium mt-1">{kpi.label}</p>
-              </div>
+              <p className="text-6xl font-bold text-black">{kpi.value}</p>
             </button>
           ))}
         </div>
 
         {/* Project Status Table */}
-        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800/50 shadow-lg overflow-hidden">
-          <div className="border-b border-slate-700 px-6 py-4 bg-gradient-to-r from-blue-600/10 to-blue-500/5">
-            <h3 className="text-lg font-bold text-white">Project Status</h3>
+        <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 shadow-lg overflow-hidden">
+          <div className="border-b border-gray-200 px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100/50">
+            <h3 className="text-lg font-bold text-gray-900">Project Status</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900 text-left">
+                <tr className="border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 text-left">
                   {["Client", "Project", "Type", "Manager", "Resources", "Status", "Invoice"].map((h) => (
-                    <th key={h} className="px-6 py-4 font-bold text-white tracking-wide uppercase text-xs">{h}</th>
+                    <th key={h} className="px-6 py-4 font-bold text-gray-900 tracking-wide uppercase text-xs">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -275,19 +272,19 @@ const Overview = () => {
                     <tr
                       key={p.id}
                       onClick={() => navigate(`/projects?id=${p.id}`)}
-                      className={`border-b border-slate-700/50 cursor-pointer transition-all duration-200 ${
-                        isEvenRow ? "bg-slate-800/20" : "bg-transparent"
-                      } hover:bg-blue-600/15 last:border-0`}
+                      className={`border-b border-gray-200 cursor-pointer transition-all duration-200 ${
+                        isEvenRow ? "bg-gray-50" : "bg-white"
+                      } hover:bg-blue-50 last:border-0`}
                     >
-                      <td className="px-6 py-4 text-slate-300 font-medium">{client?.name}</td>
-                      <td className="px-6 py-4 font-bold text-white">{p.name}</td>
-                      <td className="px-6 py-4 text-slate-400">{p.service_type}</td>
-                      <td className="px-6 py-4 text-slate-400">{p.delivery_manager}</td>
-                      <td className="px-6 py-4 text-slate-400 min-w-[300px] break-words">{getProjectResources(p.id)}</td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">{client?.name}</td>
+                      <td className="px-6 py-4 font-bold text-gray-900">{p.name}</td>
+                      <td className="px-6 py-4 text-gray-600">{p.service_type}</td>
+                      <td className="px-6 py-4 text-gray-600">{p.delivery_manager}</td>
+                      <td className="px-6 py-4 text-gray-600 min-w-[300px] break-words">{getProjectResources(p.id)}</td>
                       <td className="px-6 py-4"><span className={statusBadge(p.status)}>{p.status}</span></td>
-                      <td className="px-6 py-4 text-slate-300 whitespace-nowrap">
-                        <span className="font-bold text-white">{raisedInvoices}</span>
-                        <span className="text-slate-400">/{pMs.length || 0} raised</span>
+                      <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                        <span className="font-bold text-gray-900">{raisedInvoices}</span>
+                        <span className="text-gray-600">/{pMs.length || 0} raised</span>
                         {pendingInvoices > 0 && (
                           <span className="ml-2 text-amber-400 font-medium">({pendingInvoices} pending)</span>
                         )}
@@ -303,10 +300,10 @@ const Overview = () => {
         {/* Bottom Row */}
         <div className="grid grid-cols-1 gap-3">
           {/* Milestone Completion by Client */}
-          <div className="rounded-lg border border-slate-700 bg-gradient-to-br from-slate-900 to-slate-800/50 p-6 shadow-lg">
+          <div className="rounded-lg border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-6 shadow-lg">
             <div className="mb-6">
-              <h3 className="text-lg font-bold text-white">Milestone Completion by Client</h3>
-              <p className="text-xs text-slate-400 mt-1">Performance across all clients</p>
+              <h3 className="text-lg font-bold text-gray-900">Milestone Completion by Client</h3>
+              <p className="text-xs text-gray-500 mt-1">Performance across all clients</p>
             </div>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 100, right: 30, top: 10, bottom: 10 }}>

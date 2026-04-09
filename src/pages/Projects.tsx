@@ -205,6 +205,36 @@ const Projects = () => {
     showSaved(`${id}-${field}`);
   }, [qc, milestones]);
 
+  const updateMilestoneViaAPI = useCallback(async (id: string, field: string, value: string) => {
+    const currentDate = new Date().toISOString().split("T")[0];
+    const payload: Record<string, unknown> = {};
+
+    if (field === "client_signoff_status") {
+      payload.client_signoff_status = value;
+      if (value === "Done") {
+        payload.signedoff_date = currentDate;
+      }
+    } else if (field === "invoice_status") {
+      payload.invoice_status = value;
+      if (value === "Done") {
+        payload.invoice_raised_date = currentDate;
+      }
+    }
+
+    try {
+      const response = await fetch(`http://localhost:8000/api/milestones/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error("API error");
+      qc.invalidateQueries({ queryKey: ["milestones"] });
+      toast.success(`✓ Updated ${field.replace(/_/g, " ")} · ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      toast.error("Failed to update");
+    }
+  }, [qc]);
+
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
     const { error } = await api.from("projects").update({ [field]: value } as any).eq("id", project.id);
@@ -588,7 +618,7 @@ const Projects = () => {
       <Topbar title="Projects" />
       <div className="p-6 space-y-5 animate-fade-in">
         {/* Filters */}
-        <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-4">
+        <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
           <FilterSelect
             value={projectClientFilter}
             onChange={setProjectClientFilter}
@@ -613,14 +643,14 @@ const Projects = () => {
             ]}
           />
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wide">
+            <label className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
               Search
             </label>
             <input
               value={projectSearch}
               onChange={(e) => setProjectSearch(e.target.value)}
               placeholder="Search Project Name"
-              className="w-full rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-4 py-2.5 text-sm text-white font-medium placeholder-slate-500 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 font-medium placeholder-gray-400 transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
         </div>
@@ -650,13 +680,13 @@ const Projects = () => {
         {project && (
           <>
             {/* Project Header - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6 space-y-5">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-6 space-y-5">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-white flex items-center gap-1.5">
-                      <span className="text-slate-400 font-semibold">{client?.name}</span>
-                      <span className="text-slate-600 font-light">·</span>
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-1.5">
+                      <span className="text-gray-600 font-semibold">{client?.name}</span>
+                      <span className="text-gray-400 font-light">·</span>
                       <InlineEdit
                         value={project.name}
                         onSave={(v) => updateProject("name", v, project.name)}
@@ -664,7 +694,7 @@ const Projects = () => {
                         className="hover:text-blue-400 transition-colors cursor-text"
                       />
                     </h2>
-                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
+                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -688,7 +718,7 @@ const Projects = () => {
                       {project.status || "On Track"}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-400">
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
                     <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
                     <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
                     <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
@@ -706,14 +736,14 @@ const Projects = () => {
                 ].map((s) => (
                   <div key={s.label} className={`rounded-lg border ${s.bgColor} p-4 flex flex-col gap-2`}>
                     <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                    <p className="text-xs text-slate-400 font-medium">{s.label}</p>
+                    <p className="text-xs text-gray-500 font-medium">{s.label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Timeline Typebar - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-5 shadow-sm">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-5 shadow-sm">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
                   <MessageSquare size={20} />
@@ -922,14 +952,14 @@ const Projects = () => {
             />
 
             {/* Milestone Tracker - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
                 <h3 className="text-sm font-bold text-white">Milestone Tracker</h3>
                 <div className="flex items-center gap-3">
                   <select
                     value={milestoneStatusFilter}
                     onChange={(e) => setMilestoneStatusFilter(e.target.value)}
-                    className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-3 py-2 text-xs text-slate-300 font-medium outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                    className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-100 to-gray-50 px-3 py-2 text-xs text-gray-700 font-medium outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                   >
                     <option value="all">All Status</option>
                     {["Completed", "On Track", "Delayed", "On Hold", "Pending", "Upcoming"].map((s) => (
@@ -940,7 +970,7 @@ const Projects = () => {
                     value={milestoneSearch}
                     onChange={(e) => setMilestoneSearch(e.target.value)}
                     placeholder="Search Milestone"
-                    className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-3 py-2 text-xs text-white font-medium placeholder-slate-500 outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
+                    className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-100 to-gray-50 px-3 py-2 text-xs text-white font-medium placeholder-gray-400 outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                   />
                   <button onClick={() => setShowAddMilestone(true)} className="flex items-center gap-1 rounded-lg bg-blue-500/20 border border-blue-500/40 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all">
                     <Plus size={14} /> Add
@@ -950,8 +980,8 @@ const Projects = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-slate-700 text-left text-slate-400 bg-slate-900/30">
-                      {["ID", "Description", "Planned", "Actual/ETA", "Progress", "Status", "Blocker", "Invoice", "Remarks", "Delete"].map((h) => (
+                    <tr className="border-b border-gray-300 text-left text-gray-500 bg-white/30">
+                      {["ID", "Description", "Planned", "Actual/ETA", "Status", "Clients Signoff", "Invoice", "Remarks", "Delete"].map((h) => (
                         <th
                           key={h}
                           className={`px-4 py-3 font-semibold uppercase tracking-wider ${h === "Remarks" ? "min-w-[280px]" : "whitespace-nowrap"}`}
@@ -963,14 +993,14 @@ const Projects = () => {
                   </thead>
                   <tbody>
                     {filteredProjMilestones.length === 0 && (
-                      <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
+                      <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
                     )}
                     {filteredProjMilestones.map((m) => (
-                      <tr key={m.id} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/20 transition-colors">
+                      <tr key={m.id} className="border-b border-gray-300/50 last:border-0 hover:bg-gray-100/20 transition-colors">
                         <td className="px-4 py-3 font-medium text-white">
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
                         </td>
-                        <td className="px-4 py-3 text-slate-100 min-w-[200px] max-w-[400px] whitespace-normal break-words">
+                        <td className="px-4 py-3 text-gray-900 min-w-[200px] max-w-[400px] whitespace-normal break-words">
                           <InlineEdit
                             value={m.description || ""}
                             onSave={(v) => updateMilestone(m.id, "description", v, m.description)}
@@ -978,14 +1008,14 @@ const Projects = () => {
                             multiline
                           />
                         </td>
-                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <InlineDateEdit value={m.planned_start} onSave={(v) => updateMilestone(m.id, "planned_start", v || null, m.planned_start)} savedKey={savedField === `${m.id}-planned_start`} />
                             <span>→</span>
                             <InlineDateEdit value={m.planned_end} onSave={(v) => updateMilestone(m.id, "planned_end", v || null, m.planned_end)} savedKey={savedField === `${m.id}-planned_end`} />
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <InlineDateEdit value={m.actual_start} onSave={(v) => updateMilestone(m.id, "actual_start", v || null, m.actual_start)} savedKey={savedField === `${m.id}-actual_start`} />
                             <span>→</span>
@@ -993,46 +1023,60 @@ const Projects = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-16 rounded-full bg-secondary">
-                              <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${clampProgress(m.completion_pct)}%` }} />
-                            </div>
-                            <InlinePercentEdit
-                              value={m.completion_pct ?? 0}
-                              onSave={(val) => updateMilestone(m.id, "completion_pct", val, m.completion_pct)}
-                              savedKey={savedField === `${m.id}-completion_pct`}
-                            />
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
                           <div className="relative">
                             <select
-                              value={m.status || "Pending"}
+                              value={m.status || "On Track"}
                               onChange={(e) => updateMilestone(m.id, "status", e.target.value, m.status)}
-                              className="appearance-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                              className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
+                              style={{
+                                backgroundColor: m.status === "On Track" ? "rgb(74 222 128 / 0.2)" :
+                                  m.status === "At Risk" ? "rgb(253 224 71 / 0.2)" :
+                                    m.status === "Blocked" ? "rgb(248 113 113 / 0.2)" :
+                                      m.status === "Completed" ? "rgb(96 165 250 / 0.2)" : "rgb(229 231 235 / 0.2)",
+                                borderColor: m.status === "On Track" ? "rgb(34 197 94 / 0.5)" :
+                                  m.status === "At Risk" ? "rgb(251 146 60 / 0.5)" :
+                                    m.status === "Blocked" ? "rgb(239 68 68 / 0.5)" :
+                                      m.status === "Completed" ? "rgb(59 130 246 / 0.5)" : "rgb(209 213 219)",
+                                color: m.status === "On Track" ? "rgb(22 163 74)" :
+                                  m.status === "At Risk" ? "rgb(234 88 12)" :
+                                    m.status === "Blocked" ? "rgb(220 38 38)" :
+                                      m.status === "Completed" ? "rgb(37 99 235)" : "rgb(55 65 81)"
+                              }}
                             >
-                              {["Completed", "On Track", "Delayed", "On Hold", "Pending", "Upcoming"].map((s) => (
+                              {["On Track", "At Risk", "Blocked", "Completed"].map((s) => (
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
-                            {savedField === `${m.id}-status` && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
+                            {savedField === `${m.id}-status` && <span className="absolute -top-4 left-0 text-[10px] text-emerald-500">Saved ✓</span>}
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => updateMilestone(m.id, "blocker", !m.blocker, m.blocker)}
-                            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${m.blocker ? "bg-destructive/15 text-destructive" : "bg-secondary text-muted-foreground"}`}
+                          <select
+                            value={m.client_signoff_status || "Pending"}
+                            onChange={(e) => updateMilestoneViaAPI(m.id, "client_signoff_status", e.target.value)}
+                            className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
+                            style={{
+                              backgroundColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                              borderColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                              color: m.client_signoff_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                            }}
                           >
-                            <AlertTriangle size={12} /> {m.blocker ? "Yes" : "No"}
-                          </button>
+                            <option value="Done">Done</option>
+                            <option value="Pending">Pending</option>
+                          </select>
                         </td>
                         <td className="px-4 py-3">
                           <select
                             value={m.invoice_status || "Pending"}
-                            onChange={(e) => updateMilestone(m.id, "invoice_status", e.target.value, m.invoice_status)}
-                            className="appearance-none rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            onChange={(e) => updateMilestoneViaAPI(m.id, "invoice_status", e.target.value)}
+                            className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
+                            style={{
+                              backgroundColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                              borderColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                              color: m.invoice_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                            }}
                           >
-                            <option value="Raised">Raised</option>
+                            <option value="Done">Done</option>
                             <option value="Pending">Pending</option>
                           </select>
                         </td>
@@ -1045,7 +1089,7 @@ const Projects = () => {
                           />
                         </td>
                         <td className="px-4 py-3">
-                          <button onClick={() => setConfirmDeleteMilestone(m.id)} className="text-slate-400 hover:text-red-400 transition-colors" title="Delete Milestone">
+                          <button onClick={() => setConfirmDeleteMilestone(m.id)} className="text-gray-500 hover:text-red-400 transition-colors" title="Delete Milestone">
                             <Trash2 size={14} />
                           </button>
                         </td>
@@ -1057,7 +1101,7 @@ const Projects = () => {
             </div>
 
             {/* Resources Deployed - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold text-white">Resources Deployed</h3>
                 <div className="flex items-center gap-2">
@@ -1069,10 +1113,10 @@ const Projects = () => {
                       <Plus size={14} /> Add Member
                     </button>
                     {showAssignMember && (
-                      <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-slate-700 bg-slate-800/95 backdrop-blur p-1 shadow-lg">
-                        {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">All members assigned</p>}
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-300 bg-gray-100/95 backdrop-blur p-1 shadow-lg">
+                        {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-gray-500">All members assigned</p>}
                         {unassignedMembers.map((m) => (
-                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-2 text-xs text-slate-100 hover:bg-slate-700 transition-colors">
+                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-2 text-xs text-gray-900 hover:bg-gray-200 transition-colors">
                             {m.name} · {m.role}
                           </button>
                         ))}
@@ -1081,27 +1125,27 @@ const Projects = () => {
                   </div>
                 </div>
               </div>
-              {assignedMembers.length === 0 && <p className="text-xs text-slate-400">No resources assigned</p>}
+              {assignedMembers.length === 0 && <p className="text-xs text-gray-500">No resources assigned</p>}
               <div className="flex flex-wrap gap-2">
                 {assignedMembers.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-2 hover:border-slate-600 transition-all">
+                  <div key={m.id} className="flex items-center gap-2 rounded-lg bg-gray-100/50 border border-gray-300/50 px-3 py-2 hover:border-gray-400 transition-all">
                     <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
                       {m.initials}
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-slate-100">{m.name}</p>
-                      <p className="text-[10px] text-slate-400">{m.role}</p>
+                      <p className="text-xs font-medium text-gray-900">{m.name}</p>
+                      <p className="text-[10px] text-gray-500">{m.role}</p>
                     </div>
-                    <button onClick={() => setConfirmRemove(m.id)} className="ml-1 text-slate-400 hover:text-red-400 transition-colors"><X size={14} /></button>
+                    <button onClick={() => setConfirmRemove(m.id)} className="ml-1 text-gray-500 hover:text-red-400 transition-colors"><X size={14} /></button>
                   </div>
                 ))}
               </div>
 
               {assignedMembers.length > 0 && (
                 <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-6">
-                  <div className="rounded-xl border border-slate-700 bg-gradient-to-b from-slate-900/30 to-slate-800/20 p-5 shadow-sm">
+                  <div className="rounded-xl border border-gray-300 bg-gradient-to-b from-gray-100/30 to-gray-50/20 p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Hierarchy Tree</h4>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Hierarchy Tree</h4>
                       <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/40 px-2 py-0.5 rounded-full font-bold">Visual Flow</span>
                     </div>
                     <div className="overflow-x-auto pb-6 no-scrollbar min-h-[400px]">
@@ -1121,18 +1165,18 @@ const Projects = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-slate-700 bg-gradient-to-b from-slate-900/30 to-slate-800/20 p-5 shadow-sm">
+                  <div className="rounded-xl border border-gray-300 bg-gradient-to-b from-gray-100/30 to-gray-50/20 p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Management Setup</h4>
-                      <span className="text-[10px] bg-slate-800/50 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Config</span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">Management Setup</h4>
+                      <span className="text-[10px] bg-gray-100/50 text-gray-500 border border-gray-300 px-2 py-0.5 rounded-full font-bold">Config</span>
                     </div>
                     <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                       {assignedMembers.map((m) => {
                         const reportsToId = resolveReportsToId(m.reports_to) || "";
                         return (
-                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 hover:bg-slate-800/50 transition-colors">
+                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-gray-300/50 bg-gray-100/30 px-3 py-2 hover:bg-gray-100/50 transition-colors">
                             <div className="min-w-0">
-                              <p className="text-xs font-medium text-slate-100 truncate">{m.name}</p>
+                              <p className="text-xs font-medium text-gray-900 truncate">{m.name}</p>
                             </div>
                             <InlineEdit
                               value={m.role || ""}
@@ -1143,7 +1187,7 @@ const Projects = () => {
                               <select
                                 value={reportsToId}
                                 onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
-                                className="w-full appearance-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
+                                className="w-full appearance-none rounded-md border border-gray-300 bg-gray-100 px-2 py-1 text-xs text-gray-900 outline-none hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
                               >
                                 <option value="">Top Level</option>
                                 {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
@@ -1162,15 +1206,15 @@ const Projects = () => {
             </div>
 
             {/* Edit History - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30">
-              <div className="border-b border-slate-700 px-6 py-4 flex items-center gap-2">
-                <History size={14} className="text-slate-400" />
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
+              <div className="border-b border-gray-300 px-6 py-4 flex items-center gap-2">
+                <History size={14} className="text-gray-500" />
                 <h3 className="text-sm font-bold text-white">Edit History</h3>
-                <span className="text-[10px] text-slate-400 ml-auto font-medium">{projectAudit.length} entries</span>
+                <span className="text-[10px] text-gray-500 ml-auto font-medium">{projectAudit.length} entries</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                 {projectAudit.length === 0 && (
-                  <p className="px-6 py-6 text-xs text-slate-400 text-center">No changes recorded yet</p>
+                  <p className="px-6 py-6 text-xs text-gray-500 text-center">No changes recorded yet</p>
                 )}
                 {[...projectAudit].reverse().map((entry) => {
                   const time = entry.created_at ? new Date(entry.created_at) : null;
@@ -1208,15 +1252,15 @@ const Projects = () => {
                   }
 
                   return (
-                    <div key={entry.id} className="flex items-start gap-3 border-b border-slate-700/50 last:border-0 px-6 py-3 hover:bg-slate-800/20 transition-colors">
+                    <div key={entry.id} className="flex items-start gap-3 border-b border-gray-300/50 last:border-0 px-6 py-3 hover:bg-gray-100/20 transition-colors">
                       <div className="mt-0.5">
                         <span className={`text-[10px] font-bold uppercase ${actionColor}`}>{actionLabel}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-slate-100">{description}</p>
-                        <p className="text-[10px] text-slate-400">{entry.table_name.replace(/_/g, " ")}</p>
+                        <p className="text-xs text-gray-900">{description}</p>
+                        <p className="text-[10px] text-gray-500">{entry.table_name.replace(/_/g, " ")}</p>
                       </div>
-                      <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                      <span className="text-[10px] text-gray-500 whitespace-nowrap">
                         {time ? time.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) + " " + time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                       </span>
                     </div>
@@ -1226,18 +1270,18 @@ const Projects = () => {
             </div>
 
             {/* Project Documents - Dashboard Style */}
-            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30">
-              <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
+              <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
                 <div className="flex items-center gap-4">
                   <h3 className="text-sm font-bold text-white">Project Documents</h3>
-                  <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700">
+                  <div className="flex items-center gap-1 bg-gray-100/50 p-1 rounded-lg border border-gray-300">
                     {["all", "Internal", "Sales", "Cadence"].map((f) => (
                       <button
                         key={f}
                         onClick={() => setDocumentFilter(f)}
                         className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${documentFilter === f
-                          ? "bg-slate-100 text-slate-900"
-                          : "text-slate-400 hover:bg-slate-700 hover:text-slate-100"
+                          ? "bg-gray-200 text-slate-900"
+                          : "text-gray-500 hover:bg-gray-200 hover:text-gray-900"
                           }`}
                       >
                         {f.toUpperCase()}
@@ -1494,15 +1538,15 @@ const Projects = () => {
           const proj = projects?.find((p) => p.id === confirmDeleteProject);
           if (!proj) return null;
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteProject(null)}>
-              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteProject(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4">
-                  <h3 className="text-lg font-bold text-white">Delete Project</h3>
-                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{proj.name}</span>?</p>
-                  <p className="mt-2 text-xs text-slate-400">This action will delete all associated milestones, assignments, and documents. This cannot be undone.</p>
+                  <h3 className="text-lg font-bold text-gray-900">Delete Project</h3>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{proj.name}</span>?</p>
+                  <p className="mt-2 text-xs text-gray-500">This action will delete all associated milestones, assignments, and documents. This cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmDeleteProject(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                  <button onClick={() => setConfirmDeleteProject(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
                     Cancel
                   </button>
                   <button onClick={() => handleDeleteProject(confirmDeleteProject)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
@@ -1519,15 +1563,15 @@ const Projects = () => {
           const ms = milestones?.find((m) => m.id === confirmDeleteMilestone);
           if (!ms) return null;
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteMilestone(null)}>
-              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteMilestone(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4">
-                  <h3 className="text-lg font-bold text-white">Delete Milestone</h3>
-                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{ms.name}</span>?</p>
-                  <p className="mt-2 text-xs text-slate-400">This action cannot be undone.</p>
+                  <h3 className="text-lg font-bold text-gray-900">Delete Milestone</h3>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{ms.name}</span>?</p>
+                  <p className="mt-2 text-xs text-gray-500">This action cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmDeleteMilestone(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                  <button onClick={() => setConfirmDeleteMilestone(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
                     Cancel
                   </button>
                   <button onClick={() => handleDeleteMilestone(confirmDeleteMilestone)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
@@ -1544,15 +1588,15 @@ const Projects = () => {
           const member = assignedMembers.find((m) => m.id === confirmRemove);
           if (!member) return null;
           return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmRemove(null)}>
-              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmRemove(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4">
-                  <h3 className="text-lg font-bold text-white">Remove Member</h3>
-                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to remove <span className="font-semibold text-red-400">{member.name}</span> from this project?</p>
-                  <p className="mt-2 text-xs text-slate-400">This will unassign them from all milestones in this project.</p>
+                  <h3 className="text-lg font-bold text-gray-900">Remove Member</h3>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to remove <span className="font-semibold text-red-500">{member.name}</span> from this project?</p>
+                  <p className="mt-2 text-xs text-gray-500">This will unassign them from all milestones in this project.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmRemove(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                  <button onClick={() => setConfirmRemove(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
                     Cancel
                   </button>
                   <button onClick={() => handleRemoveMember(confirmRemove)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
