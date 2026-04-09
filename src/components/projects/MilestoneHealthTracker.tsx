@@ -130,8 +130,10 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
   Object.entries(data.all_weeks).forEach(([idx, week]) => {
     // Parse the actual start date to determine the month
     const startDate = new Date(week.start);
-    const monthKey = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`; // e.g., "2025-01"
-    const monthLabel = startDate.toLocaleString("en-US", { month: "short" }); // e.g., "Jan"
+    const year = startDate.getFullYear();
+    const month = String(startDate.getMonth() + 1).padStart(2, "0");
+    const monthKey = `${year}-${month}`; // e.g., "2025-01"
+    const monthLabel = `${startDate.toLocaleString("en-US", { month: "short" })} ${year}`; // e.g., "Jan 2025"
     const weekIdx = parseInt(idx);
 
     if (monthKey !== currentMonthKey) {
@@ -221,12 +223,15 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
                       let weekData: WeekData | undefined;
                       let milestoneCode: string | undefined;
 
+                      // Find milestone that has data for this specific week index
                       allMilestones.forEach((milestone) => {
                         const phaseData = milestoneMap[milestone]?.[phase.type];
-                        const week = phaseData?.weeks?.find((w) => w.week_number === weekIdx);
-                        if (week && !weekData) {
-                          weekData = week;
-                          milestoneCode = milestone;
+                        if (phaseData?.weeks) {
+                          const week = phaseData.weeks.find((w) => w.week_number === weekIdx);
+                          if (week && !weekData) {
+                            weekData = week;
+                            milestoneCode = milestone;
+                          }
                         }
                       });
 
