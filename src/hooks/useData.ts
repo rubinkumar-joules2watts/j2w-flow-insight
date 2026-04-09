@@ -43,6 +43,43 @@ export type ProjectDocument = {
   category?: "Internal" | "Sales" | "Cadence";
 };
 
+export type WeekData = {
+  week_number: number;
+  week_label: string;
+  status: string;
+  color: string;
+  date: string;
+};
+
+export type MilestoneHealthPhase = {
+  milestone_code: string;
+  description: string;
+  milestone_type: "practice" | "signoff" | "invoice";
+  start_date?: string | null;
+  end_date?: string | null;
+  date?: string;
+  weeks: WeekData[];
+  completion_pct?: number;
+  status: string;
+  days_variance?: number;
+  signoff_status?: string;
+  invoice_status?: string;
+};
+
+export type MilestoneHealthData = {
+  project_id: string;
+  project_name: string;
+  practice: MilestoneHealthPhase[];
+  signoff: MilestoneHealthPhase[];
+  invoice: MilestoneHealthPhase[];
+  weeks_range: {
+    start_week: string;
+    end_week: string;
+    total_weeks: number;
+  };
+  all_weeks: Record<string, { label: string; start: string }>;
+};
+
 export const useClients = () =>
   useQuery({ queryKey: ["clients"], queryFn: async () => {
     const { data, error } = await api.from("clients").select("*");
@@ -104,3 +141,15 @@ export const useProjectDocuments = () =>
     if (error) throw error;
     return data as ProjectDocument[];
   }});
+
+export const useMilestoneHealth = (projectId: string) =>
+  useQuery({
+    queryKey: ["milestone_health", projectId],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/projects/${projectId}/milestone-health`);
+      if (!res.ok) throw new Error("Failed to fetch milestone health");
+      return (await res.json()) as MilestoneHealthData;
+    },
+    enabled: !!projectId,
+  });

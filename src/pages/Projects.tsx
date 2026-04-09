@@ -4,7 +4,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
 import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth } from "@/hooks/useData";
+import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTracker";
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
@@ -54,6 +55,7 @@ const Projects = () => {
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
   const client = clients?.find((c) => c.id === project?.client_id);
+  const { data: milestoneHealth, isLoading: milestoneHealthLoading, error: milestoneHealthError } = useMilestoneHealth(selectedId);
   const projMilestones = milestones?.filter((m) => m.project_id === selectedId) || [];
   const projAssignments = assignments?.filter((a) => a.project_id === selectedId) || [];
   const projUpdates = allUpdates?.filter((u) => u.project_id === selectedId) || [];
@@ -656,14 +658,14 @@ const Projects = () => {
         </div>
 
         {/* Project Selector */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+        <div className="flex items-center gap-3 overflow-x-auto pb-2">
           {filteredProjects.map((p) => {
             const cl = clients?.find((c) => c.id === p.client_id);
             return (
               <button
                 key={p.id}
                 onClick={() => navigate(`/projects?id=${p.id}`)}
-                className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${p.id === selectedId
+                className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-semibold transition-colors ${p.id === selectedId
                   ? "border-primary bg-primary/15 text-primary"
                   : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
                   }`}
@@ -672,8 +674,8 @@ const Projects = () => {
               </button>
             );
           })}
-          <button onClick={() => setShowAddProject(true)} className="shrink-0 flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-            <Plus size={14} /> Add Project
+          <button onClick={() => setShowAddProject(true)} className="shrink-0 flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors">
+            <Plus size={16} /> Add Project
           </button>
         </div>
 
@@ -718,10 +720,19 @@ const Projects = () => {
                       {project.status || "On Track"}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
-                    <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
-                    <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
-                    <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
+                  <div className="mt-5 flex flex-wrap gap-8 text-base text-gray-800 font-bold">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Manager:</span>
+                      <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">SPOC:</span>
+                      <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600">Handled by:</span>
+                      <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -951,10 +962,13 @@ const Projects = () => {
               className="hidden"
             />
 
+            {/* Milestone Health Tracker */}
+            {selectedId && <MilestoneHealthTracker data={milestoneHealth} loading={milestoneHealthLoading} error={milestoneHealthError} />}
+
             {/* Milestone Tracker - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
               <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
-                <h3 className="text-sm font-bold text-white">Milestone Tracker</h3>
+                <h3 className="text-lg font-bold text-gray-800">Milestone Tracker</h3>
                 <div className="flex items-center gap-3">
                   <select
                     value={milestoneStatusFilter}
@@ -1103,7 +1117,7 @@ const Projects = () => {
             {/* Resources Deployed - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-white">Resources Deployed</h3>
+                <h3 className="text-lg font-bold text-gray-800">Resources Deployed</h3>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setShowAddHierarchyMember(true)} className="flex items-center gap-1 rounded-lg bg-violet-500/20 border border-violet-500/40 px-3 py-2 text-xs font-bold text-violet-400 hover:bg-violet-500/30 hover:border-violet-400 transition-all">
                     <Plus size={14} /> Add Person
@@ -1208,8 +1222,8 @@ const Projects = () => {
             {/* Edit History - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
               <div className="border-b border-gray-300 px-6 py-4 flex items-center gap-2">
-                <History size={14} className="text-gray-500" />
-                <h3 className="text-sm font-bold text-white">Edit History</h3>
+                <History size={16} className="text-gray-600" />
+                <h3 className="text-lg font-bold text-gray-800">Edit History</h3>
                 <span className="text-[10px] text-gray-500 ml-auto font-medium">{projectAudit.length} entries</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
@@ -1273,7 +1287,7 @@ const Projects = () => {
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
               <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
                 <div className="flex items-center gap-4">
-                  <h3 className="text-sm font-bold text-white">Project Documents</h3>
+                  <h3 className="text-lg font-bold text-gray-800">Project Documents</h3>
                   <div className="flex items-center gap-1 bg-gray-100/50 p-1 rounded-lg border border-gray-300">
                     {["all", "Internal", "Sales", "Cadence"].map((f) => (
                       <button
