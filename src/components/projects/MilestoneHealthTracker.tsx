@@ -122,27 +122,26 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
     { type: "invoice", label: "Invoice" },
   ];
 
-  // Group weeks by month and their positions within the month
+  // Group weeks by month based on actual start date (not label)
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string }> = {};
-  let currentMonth = "";
-  let monthStart = 0;
+  let currentMonthKey = "";
 
   Object.entries(data.all_weeks).forEach(([idx, week]) => {
-    const monthLabel = week.label.split(" ")[0]; // e.g., "Jan", "Feb"
-    if (monthLabel !== currentMonth) {
-      if (currentMonth && monthGroups[currentMonth]) {
-        monthGroups[currentMonth].endIdx = parseInt(idx) - 1;
+    // Parse the actual start date to determine the month
+    const startDate = new Date(week.start);
+    const monthKey = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`; // e.g., "2025-01"
+    const monthLabel = startDate.toLocaleString("en-US", { month: "short" }); // e.g., "Jan"
+    const weekIdx = parseInt(idx);
+
+    if (monthKey !== currentMonthKey) {
+      currentMonthKey = monthKey;
+      if (!monthGroups[monthKey]) {
+        monthGroups[monthKey] = { startIdx: weekIdx, endIdx: weekIdx, label: monthLabel };
       }
-      currentMonth = monthLabel;
-      monthStart = parseInt(idx);
-      if (!monthGroups[monthLabel]) {
-        monthGroups[monthLabel] = { startIdx: monthStart, endIdx: parseInt(idx), label: monthLabel };
-      }
+    } else if (monthGroups[monthKey]) {
+      monthGroups[monthKey].endIdx = weekIdx;
     }
   });
-  if (currentMonth && monthGroups[currentMonth]) {
-    monthGroups[currentMonth].endIdx = Object.keys(data.all_weeks).length - 1;
-  }
 
   return (
     <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
@@ -163,15 +162,15 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
             <div className="w-40 flex-shrink-0 border-r border-gray-300" />
 
             {/* Month headers */}
-            {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+            {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx, label }]) => {
               const weekCount = endIdx - startIdx + 1;
               return (
                 <div
-                  key={month}
+                  key={monthKey}
                   className="flex-shrink-0 border-r border-gray-300 py-2 px-1 text-center"
                   style={{ width: `${weekCount * 32}px` }}
                 >
-                  <span className="text-xs font-semibold text-gray-600">{month}</span>
+                  <span className="text-xs font-semibold text-gray-600">{label}</span>
                 </div>
               );
             })}
@@ -183,10 +182,10 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
             <div className="w-40 flex-shrink-0 border-r border-gray-300" />
 
             {/* Week numbers */}
-            {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+            {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx }]) => {
               const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
               return (
-                <div key={`${month}-weeks`} className="flex border-r border-gray-300">
+                <div key={`${monthKey}-weeks`} className="flex border-r border-gray-300">
                   {weeks.map((weekIdx, i) => (
                     <div
                       key={weekIdx}
@@ -213,10 +212,10 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
               </div>
 
               {/* Milestone Data Cells */}
-              {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
+              {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx }]) => {
                 const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
                 return (
-                  <div key={`${phase.type}-${month}`} className="flex border-r border-gray-300">
+                  <div key={`${phase.type}-${monthKey}`} className="flex border-r border-gray-300">
                     {weeks.map((weekIdx, i) => {
                       let weekData: WeekData | undefined;
                       const milestoneCodes: string[] = [];
