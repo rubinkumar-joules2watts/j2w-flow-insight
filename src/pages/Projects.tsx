@@ -3,11 +3,12 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
+import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments } from "@/hooks/useData";
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon } from "lucide-react";
+import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
 
 const formatDateReadable = (value: string | null | undefined) => {
@@ -648,62 +649,73 @@ const Projects = () => {
 
         {project && (
           <>
-            {/* Project Header */}
-            <div className="flex items-start justify-between rounded-lg border border-border bg-card p-5">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-foreground flex items-center gap-1.5">
-                    <span className="text-muted-foreground/60 font-semibold">{client?.name}</span>
-                    <span className="text-muted-foreground/40 font-light">·</span>
-                    <InlineEdit
-                      value={project.name}
-                      onSave={(v) => updateProject("name", v, project.name)}
-                      savedKey={savedField === "proj-name"}
-                      className="hover:text-primary transition-colors cursor-text"
-                    />
-                  </h2>
-                  {confirmDeleteProject === project.id ? (
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-destructive">Delete project?</span>
-                      <button onClick={() => handleDeleteProject(project.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
-                      <button onClick={() => setConfirmDeleteProject(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete Project">
+            {/* Project Header - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6 space-y-5">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-1.5">
+                      <span className="text-slate-400 font-semibold">{client?.name}</span>
+                      <span className="text-slate-600 font-light">·</span>
+                      <InlineEdit
+                        value={project.name}
+                        onSave={(v) => updateProject("name", v, project.name)}
+                        savedKey={savedField === "proj-name"}
+                        className="hover:text-blue-400 transition-colors cursor-text"
+                      />
+                    </h2>
+                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
                       <Trash2 size={14} />
                     </button>
-                  )}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
-                  <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
-                  <EditableSelect value={project.status || "On Track"} options={["On Track", "At Risk", "Blocked", "Completed"]} onSave={(v) => updateProject("status", v, project.status)} />
-                </div>
-                <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
-                  <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
-                  <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
+                    <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
+                    <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border" style={{
+                      backgroundColor: project.status === "On Track" ? "rgb(20 184 166 / 0.2)" :
+                        project.status === "At Risk" ? "rgb(251 146 60 / 0.2)" :
+                          project.status === "Blocked" ? "rgb(239 68 68 / 0.2)" :
+                            "rgb(59 130 246 / 0.2)",
+                      borderColor: project.status === "On Track" ? "rgb(20 184 166 / 0.3)" :
+                        project.status === "At Risk" ? "rgb(251 146 60 / 0.3)" :
+                          project.status === "Blocked" ? "rgb(239 68 68 / 0.3)" :
+                            "rgb(59 130 246 / 0.3)",
+                      color: project.status === "On Track" ? "rgb(16 185 129)" :
+                        project.status === "At Risk" ? "rgb(249 115 22)" :
+                          project.status === "Blocked" ? "rgb(239 68 68)" :
+                            "rgb(59 130 246)"
+                    }}>
+                      {project.status || "On Track"}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-400">
+                    <span className="flex items-center gap-1">Manager: <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} /></span>
+                    <span className="flex items-center gap-1">SPOC: <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} /></span>
+                    <span className="flex items-center gap-1">Handled by: <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} /></span>
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-6 text-right">
+
+              {/* KPI Metrics - Dashboard Style */}
+              <div className="grid grid-cols-4 gap-3 pt-2">
                 {[
-                  { label: "Total", value: projMilestones.length },
-                  { label: "Done", value: doneMilestones },
-                  { label: "Remaining", value: projMilestones.length - doneMilestones },
-                  { label: "Resources", value: assignedMembers.length },
+                  { label: "Total Milestones", value: projMilestones.length, color: "text-blue-400", bgColor: "bg-blue-400/10 border-blue-400/30" },
+                  { label: "Completed", value: doneMilestones, color: "text-emerald-400", bgColor: "bg-emerald-400/10 border-emerald-400/30" },
+                  { label: "Remaining", value: projMilestones.length - doneMilestones, color: "text-amber-400", bgColor: "bg-amber-400/10 border-amber-400/30" },
+                  { label: "Resources", value: assignedMembers.length, color: "text-violet-400", bgColor: "bg-violet-400/10 border-violet-400/30" },
                 ].map((s) => (
-                  <div key={s.label}>
-                    <p className="text-xl font-bold text-foreground">{s.value}</p>
-                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">{s.label}</p>
+                  <div key={s.label} className={`rounded-lg border ${s.bgColor} p-4 flex flex-col gap-2`}>
+                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-slate-400 font-medium">{s.label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Timeline Typebar */}
-            <div className="rounded-xl border border-border/50 bg-card p-4 shadow-sm">
+            {/* Timeline Typebar - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-5 shadow-sm">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
                   <MessageSquare size={20} />
                 </div>
                 <div className="flex-1 flex flex-col gap-3">
@@ -909,15 +921,15 @@ const Projects = () => {
               className="hidden"
             />
 
-            {/* Milestone Tracker */}
-            <div className="rounded-lg border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <h3 className="text-sm font-bold text-foreground">Milestone Tracker</h3>
-                <div className="flex items-center gap-2">
+            {/* Milestone Tracker - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
+                <h3 className="text-sm font-bold text-white">Milestone Tracker</h3>
+                <div className="flex items-center gap-3">
                   <select
                     value={milestoneStatusFilter}
                     onChange={(e) => setMilestoneStatusFilter(e.target.value)}
-                    className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                    className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-3 py-2 text-xs text-slate-300 font-medium outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                   >
                     <option value="all">All Status</option>
                     {["Completed", "On Track", "Delayed", "On Hold", "Pending", "Upcoming"].map((s) => (
@@ -928,21 +940,21 @@ const Projects = () => {
                     value={milestoneSearch}
                     onChange={(e) => setMilestoneSearch(e.target.value)}
                     placeholder="Search Milestone"
-                    className="rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                    className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-800 to-slate-900 px-3 py-2 text-xs text-white font-medium placeholder-slate-500 outline-none transition-all hover:border-blue-500/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
                   />
-                  <button onClick={() => setShowAddMilestone(true)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-                    <Plus size={14} /> Add Milestone
+                  <button onClick={() => setShowAddMilestone(true)} className="flex items-center gap-1 rounded-lg bg-blue-500/20 border border-blue-500/40 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all">
+                    <Plus size={14} /> Add
                   </button>
                 </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-border text-left text-muted-foreground">
+                    <tr className="border-b border-slate-700 text-left text-slate-400 bg-slate-900/30">
                       {["ID", "Description", "Planned", "Actual/ETA", "Progress", "Status", "Blocker", "Invoice", "Remarks", "Delete"].map((h) => (
                         <th
                           key={h}
-                          className={`px-3 py-2 font-medium ${h === "Remarks" ? "min-w-[280px]" : "whitespace-nowrap"}`}
+                          className={`px-4 py-3 font-semibold uppercase tracking-wider ${h === "Remarks" ? "min-w-[280px]" : "whitespace-nowrap"}`}
                         >
                           {h}
                         </th>
@@ -954,11 +966,11 @@ const Projects = () => {
                       <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
                     )}
                     {filteredProjMilestones.map((m) => (
-                      <tr key={m.id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-2 font-medium text-foreground">
+                      <tr key={m.id} className="border-b border-slate-700/50 last:border-0 hover:bg-slate-800/20 transition-colors">
+                        <td className="px-4 py-3 font-medium text-white">
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
                         </td>
-                        <td className="px-3 py-2 text-foreground min-w-[200px] max-w-[400px] whitespace-normal break-words">
+                        <td className="px-4 py-3 text-slate-100 min-w-[200px] max-w-[400px] whitespace-normal break-words">
                           <InlineEdit
                             value={m.description || ""}
                             onSave={(v) => updateMilestone(m.id, "description", v, m.description)}
@@ -966,21 +978,21 @@ const Projects = () => {
                             multiline
                           />
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <InlineDateEdit value={m.planned_start} onSave={(v) => updateMilestone(m.id, "planned_start", v || null, m.planned_start)} savedKey={savedField === `${m.id}-planned_start`} />
                             <span>→</span>
                             <InlineDateEdit value={m.planned_end} onSave={(v) => updateMilestone(m.id, "planned_end", v || null, m.planned_end)} savedKey={savedField === `${m.id}-planned_end`} />
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                        <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <InlineDateEdit value={m.actual_start} onSave={(v) => updateMilestone(m.id, "actual_start", v || null, m.actual_start)} savedKey={savedField === `${m.id}-actual_start`} />
                             <span>→</span>
                             <InlineDateEdit value={m.actual_end_eta} onSave={(v) => updateMilestone(m.id, "actual_end_eta", v || null, m.actual_end_eta)} savedKey={savedField === `${m.id}-actual_end_eta`} />
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-16 rounded-full bg-secondary">
                               <div className={`h-full rounded-full ${m.milestone_flag === "red" ? "bg-destructive" : m.milestone_flag === "amber" ? "bg-warning" : "bg-success"}`} style={{ width: `${clampProgress(m.completion_pct)}%` }} />
@@ -992,12 +1004,12 @@ const Projects = () => {
                             />
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <div className="relative">
                             <select
                               value={m.status || "Pending"}
                               onChange={(e) => updateMilestone(m.id, "status", e.target.value, m.status)}
-                              className="appearance-none rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+                              className="appearance-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
                             >
                               {["Completed", "On Track", "Delayed", "On Hold", "Pending", "Upcoming"].map((s) => (
                                 <option key={s} value={s}>{s}</option>
@@ -1006,7 +1018,7 @@ const Projects = () => {
                             {savedField === `${m.id}-status` && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
                           </div>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <button
                             onClick={() => updateMilestone(m.id, "blocker", !m.blocker, m.blocker)}
                             className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${m.blocker ? "bg-destructive/15 text-destructive" : "bg-secondary text-muted-foreground"}`}
@@ -1014,7 +1026,7 @@ const Projects = () => {
                             <AlertTriangle size={12} /> {m.blocker ? "Yes" : "No"}
                           </button>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-3">
                           <select
                             value={m.invoice_status || "Pending"}
                             onChange={(e) => updateMilestone(m.id, "invoice_status", e.target.value, m.invoice_status)}
@@ -1032,17 +1044,10 @@ const Projects = () => {
                             multiline
                           />
                         </td>
-                        <td className="px-3 py-2">
-                          {confirmDeleteMilestone === m.id ? (
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => handleDeleteMilestone(m.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
-                              <button onClick={() => setConfirmDeleteMilestone(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
-                            </div>
-                          ) : (
-                            <button onClick={() => setConfirmDeleteMilestone(m.id)} className="text-muted-foreground hover:text-destructive transition-colors" title="Delete Milestone">
-                              <Trash2 size={14} />
-                            </button>
-                          )}
+                        <td className="px-4 py-3">
+                          <button onClick={() => setConfirmDeleteMilestone(m.id)} className="text-slate-400 hover:text-red-400 transition-colors" title="Delete Milestone">
+                            <Trash2 size={14} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -1051,23 +1056,23 @@ const Projects = () => {
               </div>
             </div>
 
-            {/* Resources Deployed */}
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-foreground">Resources Deployed</h3>
+            {/* Resources Deployed - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-white">Resources Deployed</h3>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setShowAddHierarchyMember(true)} className="flex items-center gap-1 rounded-md bg-accent/15 px-2.5 py-1 text-xs font-medium text-accent hover:bg-accent/25 transition-colors">
+                  <button onClick={() => setShowAddHierarchyMember(true)} className="flex items-center gap-1 rounded-lg bg-violet-500/20 border border-violet-500/40 px-3 py-2 text-xs font-bold text-violet-400 hover:bg-violet-500/30 hover:border-violet-400 transition-all">
                     <Plus size={14} /> Add Person
                   </button>
                   <div className="relative">
-                    <button onClick={() => setShowAssignMember(!showAssignMember)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-                      <Plus size={14} /> Add Team Member
+                    <button onClick={() => setShowAssignMember(!showAssignMember)} className="flex items-center gap-1 rounded-lg bg-blue-500/20 border border-blue-500/40 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all">
+                      <Plus size={14} /> Add Member
                     </button>
                     {showAssignMember && (
-                      <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-border bg-popover p-1 shadow-lg">
-                        {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">All members assigned</p>}
+                      <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-slate-700 bg-slate-800/95 backdrop-blur p-1 shadow-lg">
+                        {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-slate-400">All members assigned</p>}
                         {unassignedMembers.map((m) => (
-                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-1.5 text-xs text-foreground hover:bg-secondary transition-colors">
+                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-2 text-xs text-slate-100 hover:bg-slate-700 transition-colors">
                             {m.name} · {m.role}
                           </button>
                         ))}
@@ -1076,36 +1081,28 @@ const Projects = () => {
                   </div>
                 </div>
               </div>
-              {assignedMembers.length === 0 && <p className="text-xs text-muted-foreground">No resources assigned</p>}
+              {assignedMembers.length === 0 && <p className="text-xs text-slate-400">No resources assigned</p>}
               <div className="flex flex-wrap gap-2">
                 {assignedMembers.map((m) => (
-                  <div key={m.id} className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-2">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
+                  <div key={m.id} className="flex items-center gap-2 rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-2 hover:border-slate-600 transition-all">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
                       {m.initials}
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-foreground">{m.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{m.role}</p>
+                      <p className="text-xs font-medium text-slate-100">{m.name}</p>
+                      <p className="text-[10px] text-slate-400">{m.role}</p>
                     </div>
-                    {confirmRemove === m.id ? (
-                      <div className="flex items-center gap-1 ml-2">
-                        <span className="text-[10px] text-destructive">Remove?</span>
-                        <button onClick={() => handleRemoveMember(m.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
-                        <button onClick={() => setConfirmRemove(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setConfirmRemove(m.id)} className="ml-1 text-muted-foreground hover:text-destructive transition-colors"><X size={14} /></button>
-                    )}
+                    <button onClick={() => setConfirmRemove(m.id)} className="ml-1 text-slate-400 hover:text-red-400 transition-colors"><X size={14} /></button>
                   </div>
                 ))}
               </div>
 
               {assignedMembers.length > 0 && (
                 <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-6">
-                  <div className="rounded-xl border border-border/50 bg-secondary/10 p-5 shadow-sm">
+                  <div className="rounded-xl border border-slate-700 bg-gradient-to-b from-slate-900/30 to-slate-800/20 p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Hierarchy Tree</h4>
-                      <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">Visual Flow</span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Hierarchy Tree</h4>
+                      <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/40 px-2 py-0.5 rounded-full font-bold">Visual Flow</span>
                     </div>
                     <div className="overflow-x-auto pb-6 no-scrollbar min-h-[400px]">
                       <div className="flex flex-col items-center justify-start min-w-max p-4">
@@ -1124,18 +1121,18 @@ const Projects = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-border/50 bg-card p-5 shadow-sm">
+                  <div className="rounded-xl border border-slate-700 bg-gradient-to-b from-slate-900/30 to-slate-800/20 p-5 shadow-sm">
                     <div className="mb-4 flex items-center justify-between">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground/80">Management Setup</h4>
-                      <span className="text-[10px] bg-secondary text-muted-foreground px-2 py-0.5 rounded-full font-bold">Config</span>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Management Setup</h4>
+                      <span className="text-[10px] bg-slate-800/50 text-slate-400 border border-slate-700 px-2 py-0.5 rounded-full font-bold">Config</span>
                     </div>
                     <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                       {assignedMembers.map((m) => {
                         const reportsToId = resolveReportsToId(m.reports_to) || "";
                         return (
-                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-slate-700/50 bg-slate-800/30 px-3 py-2 hover:bg-slate-800/50 transition-colors">
                             <div className="min-w-0">
-                              <p className="text-xs font-medium text-foreground truncate">{m.name}</p>
+                              <p className="text-xs font-medium text-slate-100 truncate">{m.name}</p>
                             </div>
                             <InlineEdit
                               value={m.role || ""}
@@ -1146,14 +1143,14 @@ const Projects = () => {
                               <select
                                 value={reportsToId}
                                 onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
-                                className="w-full appearance-none rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"
+                                className="w-full appearance-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none hover:border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
                               >
                                 <option value="">Top Level</option>
                                 {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
                                   <option key={x.id} value={x.id}>{x.name}</option>
                                 ))}
                               </select>
-                              {savedField === `${m.id}-reports_to` && <span className="absolute -top-4 left-0 text-[10px] text-success">Saved ✓</span>}
+                              {savedField === `${m.id}-reports_to` && <span className="absolute -top-4 left-0 text-[10px] text-emerald-400">Saved ✓</span>}
                             </div>
                           </div>
                         );
@@ -1164,16 +1161,16 @@ const Projects = () => {
               )}
             </div>
 
-            {/* Edit History */}
-            <div className="rounded-lg border border-border bg-card">
-              <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-                <History size={14} className="text-muted-foreground" />
-                <h3 className="text-sm font-bold text-foreground">Edit History</h3>
-                <span className="text-[10px] text-muted-foreground ml-auto">{projectAudit.length} entries</span>
+            {/* Edit History - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30">
+              <div className="border-b border-slate-700 px-6 py-4 flex items-center gap-2">
+                <History size={14} className="text-slate-400" />
+                <h3 className="text-sm font-bold text-white">Edit History</h3>
+                <span className="text-[10px] text-slate-400 ml-auto font-medium">{projectAudit.length} entries</span>
               </div>
               <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                 {projectAudit.length === 0 && (
-                  <p className="px-4 py-6 text-xs text-muted-foreground text-center">No changes recorded yet</p>
+                  <p className="px-6 py-6 text-xs text-slate-400 text-center">No changes recorded yet</p>
                 )}
                 {[...projectAudit].reverse().map((entry) => {
                   const time = entry.created_at ? new Date(entry.created_at) : null;
@@ -1182,7 +1179,7 @@ const Projects = () => {
                   const newVals = entry.new_values as Record<string, unknown> | null;
 
                   let description = "";
-                  const actionColor = entry.action === "INSERT" ? "text-success" : entry.action === "DELETE" ? "text-destructive" : "text-warning";
+                  const actionColor = entry.action === "INSERT" ? "text-emerald-400" : entry.action === "DELETE" ? "text-red-400" : "text-amber-400";
                   const actionLabel = entry.action === "INSERT" ? "Created" : entry.action === "DELETE" ? "Deleted" : "Updated";
 
                   if (entry.table_name === "milestones") {
@@ -1211,15 +1208,15 @@ const Projects = () => {
                   }
 
                   return (
-                    <div key={entry.id} className="flex items-start gap-3 border-b border-border last:border-0 px-4 py-2.5">
+                    <div key={entry.id} className="flex items-start gap-3 border-b border-slate-700/50 last:border-0 px-6 py-3 hover:bg-slate-800/20 transition-colors">
                       <div className="mt-0.5">
                         <span className={`text-[10px] font-bold uppercase ${actionColor}`}>{actionLabel}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-foreground">{description}</p>
-                        <p className="text-[10px] text-muted-foreground">{entry.table_name.replace(/_/g, " ")}</p>
+                        <p className="text-xs text-slate-100">{description}</p>
+                        <p className="text-[10px] text-slate-400">{entry.table_name.replace(/_/g, " ")}</p>
                       </div>
-                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                      <span className="text-[10px] text-slate-400 whitespace-nowrap">
                         {time ? time.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) + " " + time.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                       </span>
                     </div>
@@ -1228,19 +1225,19 @@ const Projects = () => {
               </div>
             </div>
 
-            {/* Project Documents */}
-            <div className="rounded-lg border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            {/* Project Documents - Dashboard Style */}
+            <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30">
+              <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
                 <div className="flex items-center gap-4">
-                  <h3 className="text-sm font-bold text-foreground">Project Documents</h3>
-                  <div className="flex items-center gap-1 bg-secondary/30 p-1 rounded-lg border border-border">
+                  <h3 className="text-sm font-bold text-white">Project Documents</h3>
+                  <div className="flex items-center gap-1 bg-slate-800/50 p-1 rounded-lg border border-slate-700">
                     {["all", "Internal", "Sales", "Cadence"].map((f) => (
                       <button
                         key={f}
                         onClick={() => setDocumentFilter(f)}
-                        className={`px-2 py-0.5 rounded text-[8px] font-bold transition-all ${documentFilter === f
-                          ? "bg-foreground text-background"
-                          : "text-muted-foreground hover:bg-secondary"
+                        className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${documentFilter === f
+                          ? "bg-slate-100 text-slate-900"
+                          : "text-slate-400 hover:bg-slate-700 hover:text-slate-100"
                           }`}
                       >
                         {f.toUpperCase()}
@@ -1338,139 +1335,240 @@ const Projects = () => {
         )}
 
         {/* Add Project Modal */}
-        {showAddProject && (
-          <ModalOverlay onClose={() => setShowAddProject(false)} title="Add Project">
-            <div className="space-y-3">
-              <Input label="Client Name" value={newProject.clientName} onChange={(v) => setNewProject({ ...newProject, clientName: v })} />
-              <Input label="Project Name" value={newProject.name} onChange={(v) => setNewProject({ ...newProject, name: v })} />
-              <Input label="Code" value={newProject.code} onChange={(v) => setNewProject({ ...newProject, code: v })} />
-              <Select label="Service Type" value={newProject.serviceType} onChange={(v) => setNewProject({ ...newProject, serviceType: v })} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} />
-              <Select label="Revenue Model" value={newProject.revenueModel} onChange={(v) => setNewProject({ ...newProject, revenueModel: v })} options={["Milestone", "Monthly", "Fixed"]} />
-              <Input label="Delivery Manager" value={newProject.deliveryManager} onChange={(v) => setNewProject({ ...newProject, deliveryManager: v })} />
-              <Input label="Client SPOC" value={newProject.clientSpoc} onChange={(v) => setNewProject({ ...newProject, clientSpoc: v })} />
-              <Input label="Handled By" value={newProject.handledBy} onChange={(v) => setNewProject({ ...newProject, handledBy: v })} />
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Assign Members</label>
-                <div className="max-h-32 overflow-y-auto space-y-1 rounded-md border border-border p-2">
-                  {members?.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newProject.memberIds.includes(m.id)}
-                        onChange={(e) => setNewProject({
-                          ...newProject,
-                          memberIds: e.target.checked ? [...newProject.memberIds, m.id] : newProject.memberIds.filter((id) => id !== m.id),
-                        })}
-                        className="rounded border-border"
-                      />
-                      {m.name}
-                    </label>
-                  ))}
+        <FormModal title="Add Project" isOpen={showAddProject} onClose={() => setShowAddProject(false)}>
+          <FormSection title="Project Details">
+            <FormInput
+              label="Client Name"
+              value={newProject.clientName}
+              onChange={(v) => setNewProject({ ...newProject, clientName: v })}
+              required
+            />
+            <FormInput
+              label="Project Name"
+              value={newProject.name}
+              onChange={(v) => setNewProject({ ...newProject, name: v })}
+              required
+            />
+            <FormInput
+              label="Code"
+              value={newProject.code}
+              onChange={(v) => setNewProject({ ...newProject, code: v })}
+              required
+            />
+          </FormSection>
+          <FormSection title="Configuration">
+            <FormSelect
+              label="Service Type"
+              value={newProject.serviceType}
+              onChange={(v) => setNewProject({ ...newProject, serviceType: v })}
+              options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]}
+              required
+            />
+            <FormSelect
+              label="Revenue Model"
+              value={newProject.revenueModel}
+              onChange={(v) => setNewProject({ ...newProject, revenueModel: v })}
+              options={["Milestone", "Monthly", "Fixed"]}
+              required
+            />
+          </FormSection>
+          <FormSection title="Contacts">
+            <FormInput
+              label="Delivery Manager"
+              value={newProject.deliveryManager}
+              onChange={(v) => setNewProject({ ...newProject, deliveryManager: v })}
+            />
+            <FormInput
+              label="Client SPOC"
+              value={newProject.clientSpoc}
+              onChange={(v) => setNewProject({ ...newProject, clientSpoc: v })}
+            />
+            <FormInput
+              label="Handled By"
+              value={newProject.handledBy}
+              onChange={(v) => setNewProject({ ...newProject, handledBy: v })}
+            />
+          </FormSection>
+          <FormSection title="Team">
+            <FormCheckboxGroup
+              label="Assign Members"
+              items={members?.map((m) => ({ id: m.id, name: m.name })) || []}
+              selectedIds={newProject.memberIds}
+              onChange={(ids) => setNewProject({ ...newProject, memberIds: ids })}
+            />
+          </FormSection>
+          <FormActions
+            onSubmit={handleAddProject}
+            onCancel={() => setShowAddProject(false)}
+            submitLabel="Create Project"
+          />
+        </FormModal>
+
+        <FormModal title="Add Milestone" isOpen={showAddMilestone} onClose={() => setShowAddMilestone(false)}>
+          <FormSection title="Milestone Details">
+            <FormInput
+              label="Milestone Code"
+              value={newMs.code}
+              onChange={(v) => setNewMs({ ...newMs, code: v })}
+              placeholder="M1"
+              required
+            />
+            <FormInput
+              label="Description"
+              value={newMs.description}
+              onChange={(v) => setNewMs({ ...newMs, description: v })}
+              required
+            />
+          </FormSection>
+          <FormSection title="Schedule">
+            <FormInput
+              label="Planned Start"
+              type="date"
+              value={newMs.plannedStart}
+              onChange={(v) => setNewMs({ ...newMs, plannedStart: v })}
+              required
+            />
+            <FormInput
+              label="Planned End"
+              type="date"
+              value={newMs.plannedEnd}
+              onChange={(v) => setNewMs({ ...newMs, plannedEnd: v })}
+              required
+            />
+          </FormSection>
+          <FormSection title="Deliverables">
+            <FormInput
+              label="Deliverables"
+              value={newMs.deliverables}
+              onChange={(v) => setNewMs({ ...newMs, deliverables: v })}
+            />
+          </FormSection>
+          <FormActions
+            onSubmit={handleAddMilestone}
+            onCancel={() => setShowAddMilestone(false)}
+            submitLabel="Add Milestone"
+          />
+        </FormModal>
+
+        <FormModal title="Add Person to Hierarchy" isOpen={showAddHierarchyMember} onClose={() => setShowAddHierarchyMember(false)}>
+          <FormSection title="Member Information">
+            <FormInput
+              label="Name"
+              value={newHierarchyMember.name}
+              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, name: v })}
+              placeholder="Member name"
+              required
+            />
+            <FormInput
+              label="Role"
+              value={newHierarchyMember.role}
+              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, role: v })}
+              placeholder="Role"
+              required
+            />
+          </FormSection>
+          <FormSection title="Hierarchy">
+            <FormSelect
+              label="Reports To"
+              value={newHierarchyMember.reportsTo}
+              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, reportsTo: v })}
+              options={["", ...assignedMembers.map((m) => m.name)]}
+            />
+            <FormSelect
+              label="Member Type"
+              value={newHierarchyMember.memberType}
+              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, memberType: v })}
+              options={["Internal", "Vendor", "Contractor"]}
+              required
+            />
+          </FormSection>
+          <FormActions
+            onSubmit={handleAddHierarchyMember}
+            onCancel={() => setShowAddHierarchyMember(false)}
+            submitLabel="Add Person"
+          />
+        </FormModal>
+
+        {/* Delete Project Modal */}
+        {confirmDeleteProject && (() => {
+          const proj = projects?.find((p) => p.id === confirmDeleteProject);
+          if (!proj) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteProject(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white">Delete Project</h3>
+                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{proj.name}</span>?</p>
+                  <p className="mt-2 text-xs text-slate-400">This action will delete all associated milestones, assignments, and documents. This cannot be undone.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDeleteProject(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleDeleteProject(confirmDeleteProject)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
+                    Delete Project
+                  </button>
                 </div>
               </div>
-              <button onClick={handleAddProject} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">Create Project</button>
             </div>
-          </ModalOverlay>
-        )}
+          );
+        })()}
 
-        {/* Add Milestone Modal */}
-        {showAddMilestone && (
-          <ModalOverlay onClose={() => setShowAddMilestone(false)} title="Add Milestone">
-            <div className="space-y-3">
-              <Input label="Milestone Code" value={newMs.code} onChange={(v) => setNewMs({ ...newMs, code: v })} placeholder="M1" />
-              <Input label="Description" value={newMs.description} onChange={(v) => setNewMs({ ...newMs, description: v })} />
-              <Input label="Planned Start" value={newMs.plannedStart} onChange={(v) => setNewMs({ ...newMs, plannedStart: v })} type="date" />
-              <Input label="Planned End" value={newMs.plannedEnd} onChange={(v) => setNewMs({ ...newMs, plannedEnd: v })} type="date" />
-              <Input label="Deliverables" value={newMs.deliverables} onChange={(v) => setNewMs({ ...newMs, deliverables: v })} />
-              <button onClick={handleAddMilestone} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">Add Milestone</button>
-            </div>
-          </ModalOverlay>
-        )}
-
-        {showAddHierarchyMember && (
-          <ModalOverlay onClose={() => setShowAddHierarchyMember(false)} title="Add Person to Hierarchy">
-            <div className="space-y-3">
-              <Input
-                label="Name"
-                value={newHierarchyMember.name}
-                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, name: v })}
-                placeholder="Member name"
-              />
-              <Input
-                label="Role"
-                value={newHierarchyMember.role}
-                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, role: v })}
-                placeholder="Role"
-              />
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Reports To</label>
-                <select
-                  value={newHierarchyMember.reportsTo}
-                  onChange={(e) => setNewHierarchyMember({ ...newHierarchyMember, reportsTo: e.target.value })}
-                  className="w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="">Top Level</option>
-                  {assignedMembers.map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
+        {/* Delete Milestone Modal */}
+        {confirmDeleteMilestone && (() => {
+          const ms = milestones?.find((m) => m.id === confirmDeleteMilestone);
+          if (!ms) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteMilestone(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white">Delete Milestone</h3>
+                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{ms.name}</span>?</p>
+                  <p className="mt-2 text-xs text-slate-400">This action cannot be undone.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDeleteMilestone(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleDeleteMilestone(confirmDeleteMilestone)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
+                    Delete Milestone
+                  </button>
+                </div>
               </div>
-              <Select
-                label="Member Type"
-                value={newHierarchyMember.memberType}
-                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, memberType: v })}
-                options={["Internal", "Vendor", "Contractor"]}
-              />
-              <button onClick={handleAddHierarchyMember} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">
-                Add Person
-              </button>
             </div>
-          </ModalOverlay>
-        )}
+          );
+        })()}
+
+        {/* Remove Member Modal */}
+        {confirmRemove && (() => {
+          const member = assignedMembers.find((m) => m.id === confirmRemove);
+          if (!member) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmRemove(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white">Remove Member</h3>
+                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to remove <span className="font-semibold text-red-400">{member.name}</span> from this project?</p>
+                  <p className="mt-2 text-xs text-slate-400">This will unassign them from all milestones in this project.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmRemove(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleRemoveMember(confirmRemove)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
+                    Remove Member
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </AppLayout >
   );
 };
 
-// Shared components
-const Input = ({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) => (
-  <div>
-    <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
-    />
-  </div>
-);
-
-const Select = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) => (
-  <div>
-    <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
-    >
-      {options.map((o) => <option key={o} value={o}>{o}</option>)}
-    </select>
-  </div>
-);
-
-const ModalOverlay = ({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80" onClick={onClose}>
-    <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-foreground">{title}</h3>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
-      </div>
-      {children}
-    </div>
-  </div>
-);
-
+// Inline editing components (used for inline project field editing)
 const InlineEdit = ({ value, onSave, savedKey, multiline = false, className = "" }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean; className?: string }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);

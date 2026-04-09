@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
+import { FormInput, FormSelect, FormRange, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
 import { useProjects, useTeamMembers, useAssignments, useClients } from "@/hooks/useData";
 import { api } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Check, Trash2 } from "lucide-react";
+import { Plus, X, Trash2, Check } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
@@ -174,53 +175,45 @@ const Resources = () => {
           />
         </div>
 
-        {/* Team Overview */}
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-bold text-foreground">Team Overview</h3>
-          <button onClick={() => setShowAddMember(true)} className="flex items-center gap-1 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-            <Plus size={14} /> Add Team Member
+        {/* Team Overview - Dashboard Style */}
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-white">Team Overview</h3>
+          <button onClick={() => setShowAddMember(true)} className="flex items-center gap-1 rounded-lg bg-blue-500/20 border border-blue-500/40 px-3 py-2 text-xs font-bold text-blue-400 hover:bg-blue-500/30 hover:border-blue-400 transition-all">
+            <Plus size={14} /> Add Member
           </button>
         </div>
         <div className="grid grid-cols-4 gap-3">
           {filteredMembers.map((m) => {
             const memberProjects = getProjectsForMember(m.id);
             return (
-              <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-border bg-card p-4 hover:border-primary/30 transition-colors">
+              <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-slate-700/50 bg-gradient-to-b from-slate-800/50 to-slate-900/30 p-4 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
                     {m.initials}
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-foreground">{m.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{m.role}</p>
+                    <p className="text-xs font-bold text-slate-100">{m.name}</p>
+                    <p className="text-[10px] text-slate-400">{m.role}</p>
                   </div>
                 </div>
                 <div className="mb-2">
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
                     <span>Engagement</span>
-                    <span className="font-bold text-foreground">{m.engagement_pct}%</span>
+                    <span className="font-bold text-slate-200">{m.engagement_pct}%</span>
                   </div>
-                  <div className="h-1.5 rounded-full bg-secondary">
+                  <div className="h-1.5 rounded-full bg-slate-700/50">
                     <div className={`h-full rounded-full ${engagementColor(m.engagement_pct || 0)}`} style={{ width: `${m.engagement_pct}%` }} />
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {memberProjects.map((p) => (
-                    <span key={p} className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] text-muted-foreground">{p}</span>
+                    <span key={p} className="rounded-full bg-slate-700/50 px-1.5 py-0.5 text-[9px] text-slate-300 border border-slate-600/30">{p}</span>
                   ))}
                 </div>
                 <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  {confirmDeleteMember === m.id ? (
-                    <div className="flex items-center gap-1 text-[10px]">
-                      <span className="text-destructive">Delete?</span>
-                      <button onClick={() => handleDeleteMember(m.id)} className="text-destructive hover:text-destructive/80"><Check size={14} /></button>
-                      <button onClick={() => setConfirmDeleteMember(null)} className="text-muted-foreground hover:text-foreground"><X size={14} /></button>
-                    </div>
-                  ) : (
-                    <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Delete Member">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+                  <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Member">
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               </div>
             );
@@ -279,9 +272,9 @@ const Resources = () => {
           </div>
         </div>
 
-        {/* Effort Chart */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="mb-3 text-sm font-bold text-foreground">Effort Tracking (Est. Hours/Week)</h3>
+        {/* Effort Chart - Dashboard Style */}
+        <div className="rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900/50 to-slate-800/30 p-6">
+          <h3 className="mb-4 text-sm font-bold text-white">Effort Tracking (Est. Hours/Week)</h3>
           <ResponsiveContainer width="100%" height={Math.max(200, effortData.length * 32)}>
             <BarChart data={effortData} layout="vertical" margin={{ left: 8, right: 16 }}>
               <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
@@ -340,46 +333,58 @@ const Resources = () => {
         </div>
 
         {/* Add Member Modal */}
-        {showAddMember && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80" onClick={() => setShowAddMember(false)}>
-            <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-foreground">Add Team Member</h3>
-                <button onClick={() => setShowAddMember(false)} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
-              </div>
-              <div className="space-y-3">
-                <FormInput label="Full Name" value={newMember.name} onChange={(v) => setNewMember({ ...newMember, name: v })} />
-                <FormInput label="Role" value={newMember.role} onChange={(v) => setNewMember({ ...newMember, role: v })} />
-                <FormInput label="Reports To" value={newMember.reportsTo} onChange={(v) => setNewMember({ ...newMember, reportsTo: v })} />
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Member Type</label>
-                  <select value={newMember.memberType} onChange={(e) => setNewMember({ ...newMember, memberType: e.target.value })} className="w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary">
-                    {["Full-time", "Consultant", "Intern", "Trainee"].map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Engagement % ({newMember.engagementPct}%)</label>
-                  <input type="range" min={0} max={100} value={newMember.engagementPct} onChange={(e) => setNewMember({ ...newMember, engagementPct: Number(e.target.value) })} className="w-full accent-primary" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Assign to Projects</label>
-                  <div className="max-h-32 overflow-y-auto space-y-1 rounded-md border border-border p-2">
-                    {projects?.map((p) => (
-                      <label key={p.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
-                        <input type="checkbox" checked={newMember.projectIds.includes(p.id)} onChange={(e) => setNewMember({
-                          ...newMember,
-                          projectIds: e.target.checked ? [...newMember.projectIds, p.id] : newMember.projectIds.filter((id) => id !== p.id),
-                        })} className="rounded border-border" />
-                        {p.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <button onClick={handleAddMember} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">Add Member</button>
-              </div>
-            </div>
-          </div>
-        )}
+        <FormModal title="Add Team Member" isOpen={showAddMember} onClose={() => setShowAddMember(false)}>
+          <FormSection>
+            <FormInput
+              label="Full Name"
+              value={newMember.name}
+              onChange={(v) => setNewMember({ ...newMember, name: v })}
+              placeholder="John Doe"
+              required
+            />
+            <FormInput
+              label="Role"
+              value={newMember.role}
+              onChange={(v) => setNewMember({ ...newMember, role: v })}
+              placeholder="Senior Developer"
+              required
+            />
+            <FormInput
+              label="Reports To"
+              value={newMember.reportsTo}
+              onChange={(v) => setNewMember({ ...newMember, reportsTo: v })}
+              placeholder="Manager name or ID"
+            />
+          </FormSection>
+          <FormSection title="Assignment">
+            <FormSelect
+              label="Member Type"
+              value={newMember.memberType}
+              onChange={(v) => setNewMember({ ...newMember, memberType: v })}
+              options={["Full-time", "Consultant", "Intern", "Trainee"]}
+              required
+            />
+            <FormRange
+              label="Engagement"
+              value={newMember.engagementPct}
+              onChange={(v) => setNewMember({ ...newMember, engagementPct: v })}
+              unit="%"
+            />
+          </FormSection>
+          <FormSection title="Projects">
+            <FormCheckboxGroup
+              label="Assign to Projects"
+              items={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
+              selectedIds={newMember.projectIds}
+              onChange={(ids) => setNewMember({ ...newMember, projectIds: ids })}
+            />
+          </FormSection>
+          <FormActions
+            onSubmit={handleAddMember}
+            onCancel={() => setShowAddMember(false)}
+            submitLabel="Add Member"
+          />
+        </FormModal>
 
         {/* Edit Member Drawer */}
         {editMember && (() => {
@@ -389,57 +394,105 @@ const Resources = () => {
             <EditMemberDrawer member={m} onClose={() => setEditMember(null)} qc={qc} />
           );
         })()}
+
+        {/* Delete Member Confirmation Modal */}
+        {confirmDeleteMember && (() => {
+          const member = members?.find((m) => m.id === confirmDeleteMember);
+          if (!member) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmDeleteMember(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-slate-700 bg-gradient-to-b from-slate-900 to-slate-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-white">Delete Member</h3>
+                  <p className="mt-2 text-sm text-slate-300">Are you sure you want to delete <span className="font-semibold text-red-400">{member.name}</span>?</p>
+                  <p className="mt-2 text-xs text-slate-400">This action will remove the member from all assigned projects and cannot be undone.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-slate-700 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleDeleteMember(confirmDeleteMember)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
+                    Delete Member
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </AppLayout>
   );
 };
 
-const FormInput = ({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) => (
-  <div>
-    <label className="mb-1 block text-xs font-medium text-muted-foreground">{label}</label>
-    <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary" />
-  </div>
-);
-
 const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () => void; qc: any }) => {
   const [form, setForm] = useState({ name: member.name, role: member.role, reportsTo: member.reports_to || "", memberType: member.member_type || "Full-time", engagementPct: member.engagement_pct || 50 });
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleSave = async () => {
+    setIsLoading(true);
     const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, engagement_pct: member.engagement_pct };
     const newValues = { name: form.name, role: form.role, reports_to: form.reportsTo || null, member_type: form.memberType, engagement_pct: form.engagementPct };
     const { error } = await api.from("team_members").update(newValues).eq("id", member.id);
-    if (error) { toast.error("Failed to update"); return; }
+    if (error) {
+      toast.error("Failed to update");
+      setIsLoading(false);
+      return;
+    }
     await writeAuditLog("team_members", member.id, "UPDATE", oldValues, newValues);
     qc.invalidateQueries({ queryKey: ["team_members"] });
     toast.success(`✓ Updated · ${new Date().toLocaleTimeString()}`);
+    setIsLoading(false);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-lg" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-foreground">Edit Member</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
-        </div>
-        <div className="space-y-3">
-          <FormInput label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} />
-          <FormInput label="Role" value={form.role} onChange={(v) => setForm({ ...form, role: v })} />
-          <FormInput label="Reports To" value={form.reportsTo} onChange={(v) => setForm({ ...form, reportsTo: v })} />
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Member Type</label>
-            <select value={form.memberType} onChange={(e) => setForm({ ...form, memberType: e.target.value })} className="w-full appearance-none rounded-md border border-border bg-secondary px-3 py-1.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary">
-              {["Full-time", "Consultant", "Intern", "Trainee"].map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">Engagement % ({form.engagementPct}%)</label>
-            <input type="range" min={0} max={100} value={form.engagementPct} onChange={(e) => setForm({ ...form, engagementPct: Number(e.target.value) })} className="w-full accent-primary" />
-          </div>
-          <button onClick={handleSave} className="w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground hover:opacity-90 transition-opacity">Save Changes</button>
-        </div>
-      </div>
-    </div>
+    <FormModal title="Edit Member" isOpen={true} onClose={onClose}>
+      <FormSection>
+        <FormInput
+          label="Name"
+          value={form.name}
+          onChange={(v) => setForm({ ...form, name: v })}
+          disabled={isLoading}
+          required
+        />
+        <FormInput
+          label="Role"
+          value={form.role}
+          onChange={(v) => setForm({ ...form, role: v })}
+          disabled={isLoading}
+          required
+        />
+        <FormInput
+          label="Reports To"
+          value={form.reportsTo}
+          onChange={(v) => setForm({ ...form, reportsTo: v })}
+          disabled={isLoading}
+        />
+      </FormSection>
+      <FormSection title="Assignment">
+        <FormSelect
+          label="Member Type"
+          value={form.memberType}
+          onChange={(v) => setForm({ ...form, memberType: v })}
+          options={["Full-time", "Consultant", "Intern", "Trainee"]}
+          disabled={isLoading}
+          required
+        />
+        <FormRange
+          label="Engagement"
+          value={form.engagementPct}
+          onChange={(v) => setForm({ ...form, engagementPct: v })}
+          unit="%"
+          disabled={isLoading}
+        />
+      </FormSection>
+      <FormActions
+        onSubmit={handleSave}
+        onCancel={onClose}
+        submitLabel="Save Changes"
+        isLoading={isLoading}
+      />
+    </FormModal>
   );
 };
 
