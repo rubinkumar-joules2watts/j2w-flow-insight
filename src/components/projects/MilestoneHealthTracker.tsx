@@ -182,7 +182,7 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
             {/* Empty cell for phase labels column */}
             <div className="w-40 flex-shrink-0 border-r border-gray-300" />
 
-            {/* Week numbers - only show for first 4 weeks per month */}
+            {/* Week numbers */}
             {Object.entries(monthGroups).map(([month, { startIdx, endIdx }]) => {
               const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
               return (
@@ -193,7 +193,7 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
                       className={`flex-shrink-0 flex items-center justify-center text-center py-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
                       style={{ width: "32px" }}
                     >
-                      <span className="text-[10px] text-gray-500 font-medium">{i < 4 ? `W${i + 1}` : ""}</span>
+                      <span className="text-[10px] text-gray-500 font-medium">W{i + 1}</span>
                     </div>
                   ))}
                 </div>
