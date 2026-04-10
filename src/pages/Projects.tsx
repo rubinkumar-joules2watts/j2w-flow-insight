@@ -135,6 +135,13 @@ const Projects = () => {
   const filteredProjDocs = projDocs.filter((d) => d.project_id === selectedId)
     .filter((d) => documentFilter === "all" || d.category === documentFilter);
 
+  // Sync project filter with URL parameter
+  useEffect(() => {
+    if (selectedId) {
+      setProjectFilter(selectedId);
+    }
+  }, [selectedId]);
+
   // Realtime subscription
   useEffect(() => {
     const channel = api.channel("projects-realtime")
@@ -629,7 +636,12 @@ const Projects = () => {
         <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
           <FilterSelect
             value={projectFilter}
-            onChange={setProjectFilter}
+            onChange={(value) => {
+              setProjectFilter(value);
+              if (value !== "all") {
+                navigate(`/projects?id=${value}`);
+              }
+            }}
             label="Project"
             placeholder="All Projects"
             options={[
