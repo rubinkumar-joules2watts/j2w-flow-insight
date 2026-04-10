@@ -167,7 +167,7 @@ export const useMilestoneHealth = (projectId: string) =>
     queryKey: ["milestone_health", projectId],
     queryFn: async () => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}/api/projects/${projectId}/milestone-health`);
+      const res = await fetch(`${baseUrl}api/projects/${projectId}/milestone-health`);
       if (!res.ok) throw new Error("Failed to fetch milestone health");
       return (await res.json()) as MilestoneHealthData;
     },
