@@ -92,7 +92,7 @@ const Projects = () => {
   const [confirmDeleteMilestone, setConfirmDeleteMilestone] = useState<string | null>(null);
   const [confirmDeleteProject, setConfirmDeleteProject] = useState<string | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
-  const [projectClientFilter, setProjectClientFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
   const [projectStatusFilter, setProjectStatusFilter] = useState("all");
   const [projectSearch, setProjectSearch] = useState("");
   const [milestoneStatusFilter, setMilestoneStatusFilter] = useState("all");
@@ -120,10 +120,10 @@ const Projects = () => {
   const saveTimerRef = useRef<number>();
 
   const filteredProjects = (projects || []).filter((p) => {
-    const byClient = projectClientFilter === "all" || p.client_id === projectClientFilter;
+    const byProject = projectFilter === "all" || p.id === projectFilter;
     const byStatus = projectStatusFilter === "all" || (p.status || "") === projectStatusFilter;
     const bySearch = !projectSearch.trim() || p.name.toLowerCase().includes(projectSearch.toLowerCase().trim());
-    return byClient && byStatus && bySearch;
+    return byProject && byStatus && bySearch;
   });
 
   const filteredProjMilestones = projMilestones.filter((m) => {
@@ -628,13 +628,16 @@ const Projects = () => {
         {/* Filters */}
         <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
           <FilterSelect
-            value={projectClientFilter}
-            onChange={setProjectClientFilter}
-            label="Client"
-            placeholder="All Clients"
+            value={projectFilter}
+            onChange={setProjectFilter}
+            label="Project"
+            placeholder="All Projects"
             options={[
-              { label: "All Clients", value: "all" },
-              ...((clients || []).map((c) => ({ label: c.name, value: c.id })))
+              { label: "All Projects", value: "all" },
+              ...((projects || []).map((p) => {
+                const cl = clients?.find((c) => c.id === p.client_id);
+                return { label: `${cl?.name || 'Unknown'} · ${p.name}`, value: p.id };
+              }))
             ]}
           />
           <FilterSelect
