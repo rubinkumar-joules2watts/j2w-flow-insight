@@ -79,7 +79,11 @@ const Overview = () => {
 
   const filteredProjects = (projects || []).filter((p) => {
     const byClient = clientFilter === "all" || p.client_id === clientFilter;
-    const byStatus = statusFilter === "all" || (p.status || "") === statusFilter;
+    const byStatus = statusFilter === "all"
+      ? true
+      : statusFilter === "Active"
+        ? (p.status === "On Track" || p.status === "At Risk")
+        : (p.status || "") === statusFilter;
     const bySearch = !projectSearch.trim() || p.name.toLowerCase().includes(projectSearch.toLowerCase().trim());
     return byClient && byStatus && bySearch;
   });
@@ -131,6 +135,7 @@ const Overview = () => {
             placeholder="All Status"
             options={[
               { label: "All Status", value: "all" },
+              { label: "Active (On Track + At Risk)", value: "Active" },
               { label: "On Track", value: "On Track" },
               { label: "At Risk", value: "At Risk" },
               { label: "Blocked", value: "Blocked" },
@@ -156,6 +161,7 @@ const Overview = () => {
             {
               icon: Zap,
               label: "Active Projects",
+              statusValue: "Active",
               value: counters.active_projects,
               color: "text-emerald-700",
               bgColor: "bg-emerald-50 border-emerald-200"
@@ -163,6 +169,7 @@ const Overview = () => {
             {
               icon: AlertTriangle,
               label: "On Track Projects",
+              statusValue: "On Track",
               value: counters.on_track_projects,
               color: "text-amber-700",
               bgColor: "bg-amber-50 border-amber-200"
@@ -170,6 +177,7 @@ const Overview = () => {
             {
               icon: AlertOctagon,
               label: "At Risk Projects",
+              statusValue: "At Risk",
               value: counters.at_risk_projects,
               color: "text-red-700",
               bgColor: "bg-red-50 border-red-200"
@@ -177,6 +185,7 @@ const Overview = () => {
             {
               icon: AlertCircle,
               label: "Blocked Projects",
+              statusValue: "Blocked",
               value: counters.blocked_projects,
               color: "text-indigo-700",
               bgColor: "bg-indigo-50 border-indigo-200"
@@ -184,25 +193,38 @@ const Overview = () => {
             {
               icon: Zap,
               label: "Completed Projects",
+              statusValue: "Completed",
               value: counters.completed_projects,
               color: "text-white",
               bgColor: "bg-emerald-600 border-emerald-700"
             },
-          ].map((kpi) => (
-            <div
-              key={kpi.label}
-              className={`flex flex-col items-center justify-center rounded-2xl border-2 ${kpi.bgColor} p-4 text-center shadow-lg transition-all hover:shadow-xl h-[160px] relative overflow-hidden group`}
-            >
-              <p className={`text-sm font-black uppercase tracking-[0.2em] mb-2 ${kpi.label === "Completed Projects" ? "text-emerald-50" : "text-gray-700"}`}>
-                {kpi.label.replace(" Projects", "")}
-              </p>
-              <div className="flex items-center gap-3">
-                <p className={`text-6xl font-black tracking-tight ${kpi.label === "Completed Projects" ? "text-white" : "text-gray-950"}`}>
-                  {kpi.value}
+          ].map((kpi) => {
+            const isActive = statusFilter === kpi.statusValue;
+            return (
+              <div
+                key={kpi.label}
+                onClick={() => setStatusFilter(isActive ? "all" : kpi.statusValue)}
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 ${kpi.bgColor} p-4 text-center shadow-lg cursor-pointer transition-all hover:shadow-xl h-[160px] relative overflow-hidden group ${isActive ? "ring-4 ring-offset-2 ring-blue-500 scale-[1.02]" : "hover:scale-[1.01]"
+                  }`}
+              >
+                <p className={`text-sm font-black uppercase tracking-[0.2em] mb-2 ${kpi.label === "Completed Projects" ? "text-emerald-50" : "text-gray-700"}`}>
+                  {kpi.label.replace(" Projects", "")}
                 </p>
+                <div className="flex items-center gap-3">
+                  <p className={`text-6xl font-black tracking-tight ${kpi.label === "Completed Projects" ? "text-white" : "text-gray-950"}`}>
+                    {kpi.value}
+                  </p>
+                </div>
+                {isActive && (
+                  <div className="absolute top-2 right-2">
+                    <div className="rounded-full bg-blue-500 p-1 text-white shadow-sm animate-in zoom-in duration-300">
+                      <Zap size={10} fill="currentColor" />
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Project Status Table */}
