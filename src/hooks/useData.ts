@@ -9,13 +9,15 @@ export type Project = {
   status: string | null; created_at: string | null; updated_at: string | null;
 };
 export type Milestone = {
-  id: string; project_id: string | null; milestone_code: string | null;
+  _id?: string; id?: string; project_id: string | null; milestone_code: string | null;
   description: string | null; planned_start: string | null; planned_end: string | null;
   actual_start: string | null; actual_end_eta: string | null;
   completion_pct: number | null; status: string | null; milestone_flag: string | null;
   deliverables: string | null; days_variance: number | null;
   blocker: boolean | null; blocker_owner: string | null; remarks: string | null;
-  invoice_status: string | null; created_at: string | null; updated_at: string | null;
+  client_signoff_status: string | null; signedoff_date: string | null;
+  invoice_status: string | null; invoice_raised_date: string | null;
+  created_at: string | null; updated_at: string | null;
 };
 export type TeamMember = {
   id: string; name: string; initials: string | null; role: string;
@@ -52,6 +54,7 @@ export type WeekData = {
 };
 
 export type MilestoneHealthPhase = {
+  id: string;
   milestone_code: string;
   description: string;
   milestone_type: "practice" | "signoff" | "invoice";

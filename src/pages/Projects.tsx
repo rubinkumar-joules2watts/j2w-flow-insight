@@ -220,8 +220,27 @@ const Projects = () => {
     showSaved(`${id}-${field}`);
   }, [qc, milestones]);
 
-  const updateMilestoneViaAPI = useCallback(async (id: string, field: string, value: string) => {
-    const milestone = projMilestones?.find((m) => m.id === id);
+  const updateMilestoneViaAPI = useCallback(async (milestoneCode: string, field: string, value: string | null) => {
+    // Get the milestone UUID from milestone-health API response
+    const getMilestoneIdFromHealth = () => {
+      if (!milestoneHealth) return null;
+      // Check in practice, signoff, and invoice arrays
+      const allMilestones = [
+        ...(milestoneHealth.practice || []),
+        ...(milestoneHealth.signoff || []),
+        ...(milestoneHealth.invoice || [])
+      ];
+      const found = allMilestones.find((m: any) => m.milestone_code === milestoneCode);
+      return found?.id;
+    };
+
+    const actualId = getMilestoneIdFromHealth();
+    if (!actualId) {
+      toast.error("Milestone not found");
+      return;
+    }
+
+    const milestone = projMilestones?.find((m) => m.milestone_code === milestoneCode);
     const payload: Record<string, unknown> = {};
 
     if (field === "client_signoff_status") {
@@ -234,21 +253,35 @@ const Projects = () => {
       if (value === "Done") {
         payload.invoice_raised_date = milestone?.actual_end_eta || null;
       }
+    } else if (field === "signedoff_date") {
+      // Format date as YYYY-MM-DD
+      payload.signedoff_date = value ? value : null;
+      if (value) {
+        payload.client_signoff_status = "Done";
+      }
+    } else if (field === "invoice_raised_date") {
+      // Format date as YYYY-MM-DD
+      payload.invoice_raised_date = value ? value : null;
+      if (value) {
+        payload.invoice_status = "Done";
+      }
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/milestones/${id}`, {
+      const response = await fetch(`http://localhost:8000/api/milestones/${actualId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      console.log("THE ACTUAL ID", actualId);
       if (!response.ok) throw new Error("API error");
       qc.invalidateQueries({ queryKey: ["milestones"] });
+      qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
       toast.success(`✓ Updated ${field.replace(/_/g, " ")} · ${new Date().toLocaleTimeString()}`);
     } catch (err) {
       toast.error("Failed to update");
     }
-  }, [qc]);
+  }, [qc, milestoneHealth, selectedId, projMilestones]);
 
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
@@ -1095,34 +1128,52 @@ const Projects = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <select
-                            value={m.client_signoff_status || "Pending"}
-                            onChange={(e) => updateMilestoneViaAPI(m.id, "client_signoff_status", e.target.value)}
-                            className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
-                            style={{
-                              backgroundColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
-                              borderColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
-                              color: m.client_signoff_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
-                            }}
-                          >
-                            <option value="Done">Done</option>
-                            <option value="Pending">Pending</option>
-                          </select>
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={m.client_signoff_status || "Pending"}
+                              onChange={(e) => updateMilestoneViaAPI(m.milestone_code || "", "client_signoff_status", e.target.value)}
+                              className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
+                              style={{
+                                backgroundColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                                borderColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                                color: m.client_signoff_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                              }}
+                            >
+                              <option value="Done">Done</option>
+                              <option value="Pending">Pending</option>
+                            </select>
+                            {m.client_signoff_status === "Done" && (
+                              <InlineDateEdit
+                                value={m.signedoff_date}
+                                onSave={(v) => updateMilestoneViaAPI(m.milestone_code || "", "signedoff_date", v)}
+                                savedKey={savedField === `${m.milestone_code}-signedoff_date`}
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
-                          <select
-                            value={m.invoice_status || "Pending"}
-                            onChange={(e) => updateMilestoneViaAPI(m.id, "invoice_status", e.target.value)}
-                            className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
-                            style={{
-                              backgroundColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
-                              borderColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
-                              color: m.invoice_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
-                            }}
-                          >
-                            <option value="Done">Done</option>
-                            <option value="Pending">Pending</option>
-                          </select>
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={m.invoice_status || "Pending"}
+                              onChange={(e) => updateMilestoneViaAPI(m.milestone_code || "", "invoice_status", e.target.value)}
+                              className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
+                              style={{
+                                backgroundColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                                borderColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                                color: m.invoice_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                              }}
+                            >
+                              <option value="Done">Done</option>
+                              <option value="Pending">Pending</option>
+                            </select>
+                            {m.invoice_status === "Done" && (
+                              <InlineDateEdit
+                                value={m.invoice_raised_date}
+                                onSave={(v) => updateMilestoneViaAPI(m.milestone_code || "", "invoice_raised_date", v)}
+                                savedKey={savedField === `${m.milestone_code}-invoice_raised_date`}
+                              />
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2 align-top min-w-[280px] max-w-[420px] whitespace-normal break-words">
                           <InlineEdit
@@ -1611,7 +1662,7 @@ const Projects = () => {
               <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
                 <div className="mb-4">
                   <h3 className="text-lg font-bold text-gray-900">Delete Milestone</h3>
-                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{ms.name}</span>?</p>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{ms.milestone_code || ms.description}</span>?</p>
                   <p className="mt-2 text-xs text-gray-500">This action cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">

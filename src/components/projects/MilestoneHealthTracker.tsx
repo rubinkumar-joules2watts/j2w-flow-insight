@@ -364,7 +364,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
       isOpen: true,
       type,
       milestone,
-      milestoneId: milestone.milestone_code || "",
+      milestoneId: milestone.id || "",
       weekNumber,
       weekLabel,
       isEmpty,
@@ -385,6 +385,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
       });
+      console.log("Milestone id is ", modalState.milestoneId);
 
       if (!response.ok) {
         throw new Error("Failed to update milestone");
