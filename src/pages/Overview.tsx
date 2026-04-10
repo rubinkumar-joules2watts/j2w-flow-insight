@@ -163,32 +163,32 @@ const Overview = () => {
               label: "Active Projects",
               statusValue: "Active",
               value: counters.active_projects,
-              color: "text-emerald-700",
-              bgColor: "bg-emerald-50 border-emerald-200"
+              color: "text-blue-700",
+              bgColor: "bg-blue-50 border-blue-200"
             },
             {
               icon: AlertTriangle,
               label: "On Track Projects",
               statusValue: "On Track",
               value: counters.on_track_projects,
-              color: "text-amber-700",
-              bgColor: "bg-amber-50 border-amber-200"
+              color: "text-emerald-700",
+              bgColor: "bg-emerald-50 border-emerald-200"
             },
             {
               icon: AlertOctagon,
               label: "At Risk Projects",
               statusValue: "At Risk",
               value: counters.at_risk_projects,
-              color: "text-red-700",
-              bgColor: "bg-red-50 border-red-200"
+              color: "text-orange-700",
+              bgColor: "bg-orange-50 border-orange-200"
             },
             {
               icon: AlertCircle,
               label: "Blocked Projects",
               statusValue: "Blocked",
               value: counters.blocked_projects,
-              color: "text-indigo-700",
-              bgColor: "bg-indigo-50 border-indigo-200"
+              color: "text-red-700",
+              bgColor: "bg-red-50 border-red-200"
             },
             {
               icon: Zap,
