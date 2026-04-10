@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { MilestoneHealthData, MilestoneHealthPhase, WeekData } from "@/hooks/useData";
 import { Loader2 } from "lucide-react";
 
@@ -323,6 +324,7 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCe
 };
 
 export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: MilestoneHealthTrackerProps) => {
+  const qc = useQueryClient();
   const [modalState, setModalState] = useState<ModalState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -388,10 +390,11 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
         throw new Error("Failed to update milestone");
       }
 
-      // Close modal and refresh data
+      // Close modal and refresh milestone health data immediately
       handleModalClose();
-      if (onDataRefresh && data?.project_id) {
-        await onDataRefresh(data.project_id);
+      if (data?.project_id) {
+        // Refetch milestone health directly
+        await qc.refetchQueries({ queryKey: ["milestone_health", data.project_id] });
       }
     } catch (err) {
       console.error("Update failed:", err);
