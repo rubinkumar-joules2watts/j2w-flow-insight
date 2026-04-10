@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from 'react'
 import {
   X, Upload, FileText, Plus, Trash2, Search, ChevronRight, ChevronLeft,
   Check, AlertTriangle, Building2, Zap, Calendar, Users, CheckCircle2,
-  HelpCircle, ChevronDown, ChevronUp, ExternalLink,
+  HelpCircle, ChevronDown, ChevronUp, ExternalLink, Edit2, Pencil
 } from 'lucide-react'
 import internalData from '../../data/internal_data.js'
 import externalData from '../../data/external_data.js'
@@ -435,12 +435,15 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const [allocations, setAllocations] = useState<AllocResult[]>([])
   // track which resource IDs were assigned by user from the TBD panel
   const [tbdAssigned, setTbdAssigned] = useState<Record<string, string>>({}) // resourceId → company name
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
+  const [editingResourceId, setEditingResourceId] = useState<string | null>(null)
 
   const handleClose = () => {
     setStep('choose'); setFileName(''); setProjectName(''); setClient('')
     setMilestones([]); setResources([]); setSelectedResIdx(0)
     setSkillSearch(''); setActiveSkillChip(''); setAllocations([])
     setTbdAssigned({})
+    setEditingMilestoneId(null); setEditingResourceId(null)
     onClose()
   }
 
@@ -468,9 +471,22 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const updateMilestone = (idx: number, field: keyof MilestoneRow, value: string) => {
     setMilestones(prev => {
       const rows = prev.map(r => ({ ...r }))
-      rows[idx] = { ...rows[idx], [field]: value }
-      if (field === 'endDate' && idx < rows.length - 1) {
-        let lastEnd = value
+      const oldRow = rows[idx]
+
+      if (field === 'startDate') {
+        const dur = daysBetween(oldRow.startDate, oldRow.endDate)
+        const newStart = value
+        const newEnd = addDays(newStart, dur)
+        rows[idx] = { ...rows[idx], startDate: newStart, endDate: newEnd }
+      } else if (field === 'endDate') {
+        rows[idx] = { ...rows[idx], endDate: value }
+      } else {
+        rows[idx] = { ...rows[idx], [field]: value }
+      }
+
+      // Cascade if dates changed
+      if (field === 'startDate' || field === 'endDate') {
+        let lastEnd = rows[idx].endDate
         for (let i = idx + 1; i < rows.length; i++) {
           const dur = daysBetween(rows[i].startDate, rows[i].endDate)
           const newStart = addDays(lastEnd, 1)
@@ -479,6 +495,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
           lastEnd = newEnd
         }
       }
+
       return rows
     })
   }
@@ -631,14 +648,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
           {/* ══ CHOOSE ══════════════════════════════════════════════════════════ */}
           {step === 'choose' && (
             <div className="flex flex-col items-center justify-center py-14 px-8">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2 text-center">How would you like to start?</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2 text-center">Upload Project Brief</h3>
               <p className="text-gray-400 text-sm mb-10 text-center max-w-md">
-                Upload a project brief to auto-extract milestones and resources, or fill in the details manually.
+                Upload a project brief to auto-extract milestones, resources, and required skills using AI.
               </p>
-              <div className="flex gap-6 w-full max-w-2xl">
+              <div className="flex justify-center w-full max-w-md">
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="flex-1 flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 p-10 hover:bg-blue-50 hover:border-blue-400 transition-all group text-center"
+                  className="w-full flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 p-10 hover:bg-blue-50 hover:border-blue-400 transition-all group text-center"
                 >
                   <div className="w-16 h-16 rounded-2xl bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center transition-colors">
                     <Upload size={28} className="text-blue-600" />
@@ -648,20 +665,6 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                     <p className="text-xs text-gray-500 mt-1">HTML · PDF · DOCX<br />AI extracts milestones, resources & skills</p>
                   </div>
                   <span className="rounded-full bg-blue-600 text-white text-xs font-bold px-4 py-1.5 shadow-sm">Smart Extract</span>
-                </button>
-
-                <button
-                  onClick={startManual}
-                  className="flex-1 flex flex-col items-center gap-4 rounded-2xl border-2 border-gray-200 bg-gray-50 p-10 hover:bg-gray-100 hover:border-gray-300 transition-all group text-center"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-gray-200 group-hover:bg-gray-300 flex items-center justify-center transition-colors">
-                    <FileText size={28} className="text-gray-600" />
-                  </div>
-                  <div>
-                    <p className="text-base font-bold text-gray-900">Manual Entry</p>
-                    <p className="text-xs text-gray-500 mt-1">Enter project details,<br />milestones & resources manually</p>
-                  </div>
-                  <span className="rounded-full bg-gray-700 text-white text-xs font-bold px-4 py-1.5">Manual</span>
                 </button>
               </div>
             </div>
@@ -742,36 +745,66 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       </tr>
                     </thead>
                     <tbody>
-                      {milestones.map((m, i) => (
-                        <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50/60 group">
-                          <td className="px-4 py-2.5">
-                            <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <input className="w-full text-sm font-medium text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-300 focus:bg-blue-50/20 rounded-md px-2 py-0.5 outline-none transition-colors"
-                              value={m.name} onChange={e => updateMilestone(i, 'name', e.target.value)} />
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <input type="date" className="text-xs text-gray-700 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-300 rounded-md px-2 py-0.5 outline-none transition-colors"
-                              value={m.startDate} onChange={e => updateMilestone(i, 'startDate', e.target.value)} />
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <input type="date" className="text-xs text-gray-700 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-300 rounded-md px-2 py-0.5 outline-none transition-colors"
-                              value={m.endDate} onChange={e => updateMilestone(i, 'endDate', e.target.value)} />
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <span className="text-[11px] font-mono text-gray-400">
-                              {daysBetween(m.startDate, m.endDate) === 0 ? '1 day' : `+${daysBetween(m.startDate, m.endDate)} days`}
-                            </span>
-                          </td>
-                          <td className="px-2 py-2.5">
-                            <button onClick={() => delMilestone(m.id)}
-                              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-300 hover:text-red-400 transition-all">
-                              <Trash2 size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {milestones.map((m, i) => {
+                        const isEditing = editingMilestoneId === m.id
+                        return (
+                          <tr key={m.id} className={`border-b border-gray-50 hover:bg-gray-50/60 group ${isEditing ? 'bg-blue-50/30' : ''}`}>
+                            <td className="px-4 py-2.5">
+                              <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {isEditing ? (
+                                <input className="w-full text-sm font-medium text-gray-900 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                  value={m.name} onChange={e => updateMilestone(i, 'name', e.target.value)} autoFocus />
+                              ) : (
+                                <span className="text-sm font-medium text-gray-900 px-2">{m.name}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {isEditing ? (
+                                <input type="date" className="text-xs text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                  value={m.startDate} onChange={e => updateMilestone(i, 'startDate', e.target.value)} />
+                              ) : (
+                                <span className="text-xs text-gray-600 px-2">{fmtDate(m.startDate)}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {isEditing ? (
+                                <input type="date" className="text-xs text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                  value={m.endDate} onChange={e => updateMilestone(i, 'endDate', e.target.value)} />
+                              ) : (
+                                <span className="text-xs text-gray-600 px-2">{fmtDate(m.endDate)}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className="text-[11px] font-mono text-gray-400">
+                                {daysBetween(m.startDate, m.endDate) === 0 ? '1 day' : `+${daysBetween(m.startDate, m.endDate)} days`}
+                              </span>
+                            </td>
+                            <td className="px-2 py-2.5">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setEditingMilestoneId(isEditing ? null : m.id)}
+                                  className={`p-1.5 rounded-lg transition-all ${
+                                    isEditing 
+                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' 
+                                      : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                  }`}
+                                  title={isEditing ? 'Save' : 'Edit'}
+                                >
+                                  {isEditing ? <Check size={14} /> : <Pencil size={12} />}
+                                </button>
+                                <button onClick={() => delMilestone(m.id)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -802,70 +835,112 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                         <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-44">Role</th>
                         <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Skills Required</th>
                         <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Responsibilities</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-32">Bandwidth</th>
+                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-44">Bandwidth</th>
                         <th className="w-10" />
                       </tr>
                     </thead>
                     <tbody>
-                      {resources.map((r, i) => (
-                        <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/60 group">
-                          <td className="px-4 py-2.5">
-                            <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">R{i + 1}</span>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <input className="w-full text-sm font-semibold text-gray-900 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-300 focus:bg-blue-50/20 rounded-md px-2 py-0.5 outline-none transition-colors"
-                              value={r.role} onChange={e => updateResource(i, 'role', e.target.value)} placeholder="Role title…" />
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex flex-wrap gap-1 items-center">
-                              {r.skills.map(s => (
-                                <span key={s} className="flex items-center gap-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 group/chip">
-                                  {s}
-                                  <button onClick={() => removeSkill(i, s)}
-                                    className="ml-0.5 opacity-0 group-hover/chip:opacity-100 text-blue-400 hover:text-red-500 transition-all">
-                                    <X size={8} />
-                                  </button>
-                                </span>
-                              ))}
-                              <input
-                                className="text-[11px] bg-transparent border border-dashed border-gray-200 rounded-full px-2 py-0.5 outline-none w-16 text-gray-500 focus:border-blue-300 focus:w-24 transition-all"
-                                placeholder="+ skill"
-                                onKeyDown={e => {
-                                  const val = (e.target as HTMLInputElement).value.trim()
-                                  if ((e.key === 'Enter' || e.key === ',') && val) {
-                                    addSkill(i, val)
-                                    ;(e.target as HTMLInputElement).value = ''
-                                    e.preventDefault()
-                                  }
-                                }}
-                              />
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <input className="w-full text-xs text-gray-600 bg-transparent border border-transparent hover:border-gray-200 focus:border-blue-300 rounded-md px-2 py-0.5 outline-none transition-colors"
-                              value={r.responsibilities} onChange={e => updateResource(i, 'responsibilities', e.target.value)} placeholder="Key responsibilities…" />
-                          </td>
-                          <td className="px-4 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${r.bandwidth}%` }} />
+                      {resources.map((r, i) => {
+                        const isEditing = editingResourceId === r.id
+                        return (
+                          <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/60 group ${isEditing ? 'bg-emerald-50/20' : ''}`}>
+                            <td className="px-4 py-2.5">
+                              <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">R{i + 1}</span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {isEditing ? (
+                                <input className="w-full text-sm font-semibold text-gray-900 bg-white border border-emerald-200 rounded-md px-2 py-1 outline-none transition-colors"
+                                  value={r.role} onChange={e => updateResource(i, 'role', e.target.value)} placeholder="Role title…" autoFocus />
+                              ) : (
+                                <span className="text-sm font-semibold text-gray-900 px-2">{r.role || '—'}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex flex-wrap gap-1 items-center px-1">
+                                {r.skills.map(s => (
+                                  <span key={s} className="flex items-center gap-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 group/chip">
+                                    {s}
+                                    {isEditing && (
+                                      <button onClick={() => removeSkill(i, s)}
+                                        className="ml-0.5 opacity-0 group-hover/chip:opacity-100 text-blue-400 hover:text-red-500 transition-all">
+                                        <X size={8} />
+                                      </button>
+                                    )}
+                                  </span>
+                                ))}
+                                {isEditing ? (
+                                  <input
+                                    className="text-[11px] bg-white border border-dashed border-gray-200 rounded-full px-2 py-0.5 outline-none w-16 text-gray-500 focus:border-blue-300 focus:w-24 transition-all"
+                                    placeholder="+ skill"
+                                    onKeyDown={e => {
+                                      const val = (e.target as HTMLInputElement).value.trim()
+                                      if ((e.key === 'Enter' || e.key === ',') && val) {
+                                        addSkill(i, val)
+                                        ;(e.target as HTMLInputElement).value = ''
+                                        e.preventDefault()
+                                      }
+                                    }}
+                                  />
+                                ) : r.skills.length === 0 && (
+                                  <span className="text-[10px] text-gray-400 italic">No skills added</span>
+                                )}
                               </div>
-                              <div className="flex items-center gap-0.5">
-                                <input type="number" min={10} max={100} step={10}
-                                  className="w-10 text-xs font-bold text-gray-900 bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 text-right outline-none"
-                                  value={r.bandwidth} onChange={e => updateResource(i, 'bandwidth', Math.min(100, Math.max(10, Number(e.target.value))))} />
-                                <span className="text-[10px] text-gray-400">%</span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {isEditing ? (
+                                <input className="w-full text-xs text-gray-600 bg-white border border-gray-200 rounded-md px-2 py-1 outline-none transition-colors"
+                                  value={r.responsibilities} onChange={e => updateResource(i, 'responsibilities', e.target.value)} placeholder="Key responsibilities…" />
+                              ) : (
+                                <span className="text-xs text-gray-600 px-2 truncate block max-w-[200px]">{r.responsibilities || '—'}</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[80px] overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-500 ${
+                                      r.bandwidth >= 100 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 
+                                      r.bandwidth >= 50 ? 'bg-blue-500' : 'bg-amber-500'
+                                    }`} 
+                                    style={{ width: `${r.bandwidth}%` }} 
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 shadow-sm">
+                                  {isEditing ? (
+                                    <input type="number" min={0} max={100} step={5}
+                                      className="w-8 text-[11px] font-bold text-gray-900 bg-transparent text-right outline-none appearance-none"
+                                      value={r.bandwidth} onChange={e => updateResource(i, 'bandwidth', Math.min(100, Math.max(0, Number(e.target.value))))} />
+                                  ) : (
+                                    <span className="w-8 text-[11px] font-bold text-gray-900 text-right">{r.bandwidth}</span>
+                                  )}
+                                  <span className="text-[10px] text-gray-400 font-bold">%</span>
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-2 py-2.5">
-                            <button onClick={() => delResource(r.id)}
-                              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-300 hover:text-red-400 transition-all">
-                              <Trash2 size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td className="px-2 py-2.5">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => setEditingResourceId(isEditing ? null : r.id)}
+                                  className={`p-1.5 rounded-lg transition-all ${
+                                    isEditing 
+                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' 
+                                      : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
+                                  }`}
+                                  title={isEditing ? 'Save' : 'Edit'}
+                                >
+                                  {isEditing ? <Check size={14} /> : <Pencil size={12} />}
+                                </button>
+                                <button onClick={() => delResource(r.id)}
+                                  className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
