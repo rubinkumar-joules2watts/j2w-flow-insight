@@ -1284,11 +1284,16 @@ const Projects = () => {
               <div className="flex flex-wrap gap-2">
                 {assignedMembers.map((m) => (
                   <div key={m.id} className="flex items-center gap-2 rounded-lg bg-gray-100/50 border border-gray-300/50 px-3 py-2 hover:border-gray-400 transition-all">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'External' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
                       {m.initials}
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-gray-900">{m.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs font-bold text-gray-900">{m.name}</p>
+                        <span className={`text-[7px] font-extrabold px-1 rounded-sm border ${m.resource_type === 'External' ? 'bg-amber-400/10 text-amber-500 border-amber-400/20' : 'bg-emerald-400/10 text-emerald-500 border-emerald-400/20'}`}>
+                          {m.resource_type === 'External' ? 'EXTERNAL' : 'INTERNAL'}
+                        </span>
+                      </div>
                       <p className="text-[10px] text-gray-500">{m.role}</p>
                     </div>
                     <button onClick={() => setConfirmRemove(m.id)} className="ml-1 text-gray-500 hover:text-red-400 transition-colors"><X size={14} /></button>
