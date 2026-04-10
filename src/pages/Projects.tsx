@@ -296,6 +296,23 @@ const Projects = () => {
     showSaved(`proj-${field}`);
   }, [qc, project]);
 
+  const updateProjectStatusViaAPI = useCallback(async (value: string) => {
+    if (!project) return;
+    try {
+      const response = await fetch(apiUrl(`/api/projects/${project.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: value })
+      });
+      if (!response.ok) throw new Error("API error");
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success(`✓ Project Status updated to ${value} · ${new Date().toLocaleTimeString()}`);
+      showSaved("proj-status");
+    } catch (err) {
+      toast.error("Failed to update project status");
+    }
+  }, [qc, project]);
+
   // Add project form
   const [newProject, setNewProject] = useState({ clientName: "", name: "", code: "", serviceType: "Outcome", revenueModel: "Milestone", deliveryManager: "", clientSpoc: "", handledBy: "", memberIds: [] as string[] });
 
@@ -753,14 +770,14 @@ const Projects = () => {
                         className="hover:text-blue-400 transition-colors cursor-text"
                       />
                     </h2>
-                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
-                      <Trash2 size={14} />
+                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1.5 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
+                      <Trash2 size={20} />
                     </button>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <EditableSelect value={project.service_type || ""} options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
+                    <EditableSelect value={project.service_type || ""} options={["Outcomes", "Governance"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
                     <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
-                    <div className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border" style={{
+                    <div className="relative inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border transition-all" style={{
                       backgroundColor: project.status === "On Track" ? "rgb(20 184 166 / 0.2)" :
                         project.status === "At Risk" ? "rgb(251 146 60 / 0.2)" :
                           project.status === "Blocked" ? "rgb(239 68 68 / 0.2)" :
@@ -774,7 +791,17 @@ const Projects = () => {
                           project.status === "Blocked" ? "rgb(239 68 68)" :
                             "rgb(59 130 246)"
                     }}>
-                      {project.status || "On Track"}
+                      <select
+                        value={project.status || "On Track"}
+                        onChange={(e) => updateProjectStatusViaAPI(e.target.value)}
+                        className="bg-transparent outline-none cursor-pointer appearance-none pr-4"
+                      >
+                        {["On Track", "At Risk", "Blocked", "Completed"].map((s) => (
+                          <option key={s} value={s} className="bg-white text-gray-900">{s}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={10} className="absolute right-2 pointer-events-none" />
+                      {savedField === "proj-status" && <span className="absolute -top-4 left-0 text-[10px] text-emerald-500">Saved ✓</span>}
                     </div>
                   </div>
                   <div className="mt-5 flex flex-wrap gap-8 text-base text-gray-800 font-bold">
@@ -1503,7 +1530,7 @@ const Projects = () => {
               label="Service Type"
               value={newProject.serviceType}
               onChange={(v) => setNewProject({ ...newProject, serviceType: v })}
-              options={["Outcome", "Governance", "AI Solution", "Automation", "Others"]}
+              options={["Outcomes", "Governance"]}
               required
             />
             <FormSelect
