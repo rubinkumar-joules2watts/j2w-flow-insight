@@ -54,7 +54,7 @@ const Resources = () => {
     return "bg-destructive";
   };
 
-  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", engagementPct: 50, projectIds: [] as string[] });
+  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", engagementPct: 50, projectIds: [] as string[] });
 
   const handleAddMember = async () => {
     const initials = newMember.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
@@ -62,7 +62,7 @@ const Resources = () => {
     const color = colors[Math.floor(Math.random() * colors.length)];
     const { data, error } = await api.from("team_members").insert({
       name: newMember.name, role: newMember.role, reports_to: newMember.reportsTo || null,
-      member_type: newMember.memberType, engagement_pct: newMember.engagementPct,
+      member_type: newMember.memberType, resource_type: newMember.resourceType || "Internal", engagement_pct: newMember.engagementPct,
       initials, color_hex: color,
     }).select().single();
     if (error) { toast.error("Failed to add member"); return; }
@@ -75,7 +75,7 @@ const Resources = () => {
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
     toast.success(`✓ Member added · ${new Date().toLocaleTimeString()}`);
     setShowAddMember(false);
-    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", engagementPct: 50, projectIds: [] });
+    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", engagementPct: 50, projectIds: [] });
   };
 
   const handleToggleAssignment = async (memberId: string, projectId: string) => {
@@ -364,6 +364,13 @@ const Resources = () => {
               options={["Full-time", "Consultant", "Intern", "Trainee"]}
               required
             />
+            <FormSelect
+              label="Resource Type"
+              value={newMember.resourceType}
+              onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
+              options={["Internal", "External"]}
+              required
+            />
             <FormRange
               label="Engagement"
               value={newMember.engagementPct}
@@ -425,13 +432,13 @@ const Resources = () => {
 };
 
 const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () => void; qc: any }) => {
-  const [form, setForm] = useState({ name: member.name, role: member.role, reportsTo: member.reports_to || "", memberType: member.member_type || "Full-time", engagementPct: member.engagement_pct || 50 });
+  const [form, setForm] = useState({ name: member.name, role: member.role, reportsTo: member.reports_to || "", memberType: member.member_type || "Full-time", resourceType: member.resource_type || "Internal", engagementPct: member.engagement_pct || 50 });
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSave = async () => {
     setIsLoading(true);
-    const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, engagement_pct: member.engagement_pct };
-    const newValues = { name: form.name, role: form.role, reports_to: form.reportsTo || null, member_type: form.memberType, engagement_pct: form.engagementPct };
+    const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, resource_type: member.resource_type, engagement_pct: member.engagement_pct };
+    const newValues = { name: form.name, role: form.role, reports_to: form.reportsTo || null, member_type: form.memberType, resource_type: form.resourceType || "Internal", engagement_pct: form.engagementPct };
     const { error } = await api.from("team_members").update(newValues).eq("id", member.id);
     if (error) {
       toast.error("Failed to update");
@@ -475,6 +482,14 @@ const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () =>
           value={form.memberType}
           onChange={(v) => setForm({ ...form, memberType: v })}
           options={["Full-time", "Consultant", "Intern", "Trainee"]}
+          disabled={isLoading}
+          required
+        />
+        <FormSelect
+          label="Resource Type"
+          value={form.resourceType}
+          onChange={(v) => setForm({ ...form, resourceType: v })}
+          options={["Internal", "External"]}
           disabled={isLoading}
           required
         />
