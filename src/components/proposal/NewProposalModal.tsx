@@ -26,14 +26,22 @@ interface ResourceRow {
   bandwidth: number
 }
 
+interface Assignment {
+  type: 'internal' | 'external'
+  id: string // emp ID or name+company
+  name: string
+  subText?: string
+  bw: number
+  score: number
+}
+
 interface AllocResult {
   resourceId: string
   role: string
   requiredBW: number
-  internal: { name: string; bw: number; score: number } | null
-  external: { company: string; contact: string; bw: number } | null
+  assignments: Assignment[]
   tbdBW: number
-  status: 'matched' | 'partial' | 'tbd'
+  status: 'matched' | 'partial'
 }
 
 // ─── GEHC sample extracted data ──────────────────────────────────────────────
@@ -131,53 +139,54 @@ function estAvailBW(emp: any, used: Record<number, number>): number {
 }
 
 function getTbdReason(alloc: AllocResult, res: ResourceRow): string {
-  const employees: any[] = (internalData as any).employees
-  if (alloc.internal) {
-    return `${alloc.internal.name} covers ${alloc.internal.bw}% — remaining ${alloc.tbdBW}% needs external support`
+  if (alloc.assignments.length > 0 && alloc.tbdBW > 0) {
+    const names = alloc.assignments.map(a => a.name).join(' & ')
+    return `${names} cover ${alloc.requiredBW - alloc.tbdBW}% — remaining ${alloc.tbdBW}% needs support`
   }
+  if (alloc.tbdBW === 0) return `Resource requirements fully met for this role`
+  const employees: any[] = (internalData as any).employees
   const hasSkillMatch = employees.some(emp => scoreEmployee(emp, res.skills).score >= 30)
-  if (!hasSkillMatch) return `No internal resource has sufficient skill match for ${res.role}`
-  return `All matching internal resources are at full capacity during project timeline`
+  if (!hasSkillMatch) return `No internal fit found for ${res.role}`
+  return `Internal resources are at capacity for the requested project timeline`
 }
 
 function runAutoAlloc(resources: ResourceRow[]): AllocResult[] {
   const usedBW: Record<number, number> = {}
+  const assignedEmpIds = new Set<number>()
   const employees: any[] = (internalData as any).employees
-  const companies: any[] = (externalData as any).companies
 
   return resources.map(res => {
+    const list: Assignment[] = []
+    let open = res.bandwidth
+    
     const candidates = employees
       .map(emp => ({ emp, ...scoreEmployee(emp, res.skills), avail: estAvailBW(emp, usedBW) }))
-      .filter(c => c.score >= 30 && c.avail > 0)
-      .sort((a, b) => (b.score * Math.min(b.avail, res.bandwidth)) - (a.score * Math.min(a.avail, res.bandwidth)))
+      .filter(c => c.score >= 50 && c.avail >= 20 && !assignedEmpIds.has(c.emp.ID))
+      .sort((a, b) => b.score - a.score || b.avail - a.avail)
 
-    if (!candidates.length) {
-      // Try auto-assign best external
-      const extMatch = companies
-        .map(c => ({ c, ...scoreExternal(c, res.skills) }))
-        .filter(x => x.score >= 15)
-        .sort((a, b) => b.score - a.score)[0]
-      return {
-        resourceId: res.id, role: res.role, requiredBW: res.bandwidth,
-        internal: null,
-        external: extMatch ? { company: extMatch.c['Company Name'], contact: extMatch.c['Contact Person'], bw: res.bandwidth } : null,
-        tbdBW: extMatch ? 0 : res.bandwidth,
-        status: extMatch ? 'partial' : 'tbd',
-      }
+    if (candidates[0]) {
+      const best = candidates[0]
+      const alloc = Math.min(open, best.avail)
+      list.push({
+        type: 'internal',
+        id: String(best.emp.ID),
+        name: best.emp.Name,
+        subText: best.emp.Department || 'Engineering',
+        bw: alloc,
+        score: best.score
+      })
+      usedBW[best.emp.ID] = (usedBW[best.emp.ID] || 0) + alloc
+      assignedEmpIds.add(best.emp.ID)
+      open -= alloc
     }
 
-    const best = candidates[0]
-    const allocBW = Math.min(best.avail, res.bandwidth)
-    usedBW[best.emp.ID] = (usedBW[best.emp.ID] || 0) + allocBW
-    const remaining = res.bandwidth - allocBW
-
-    // For partial slots, do NOT auto-assign external — let user pick from TBD panel
     return {
-      resourceId: res.id, role: res.role, requiredBW: res.bandwidth,
-      internal: { name: best.emp.Name, bw: allocBW, score: best.score },
-      external: null,
-      tbdBW: remaining,
-      status: allocBW >= res.bandwidth ? 'matched' : 'partial',
+      resourceId: res.id,
+      role: res.role,
+      requiredBW: res.bandwidth,
+      assignments: list,
+      tbdBW: open,
+      status: open <= 0 ? 'matched' : 'partial'
     }
   })
 }
@@ -192,7 +201,7 @@ function EmpCard({ emp, score, matched, partial, avail }: {
   const bwColor = avail >= 60 ? 'bg-emerald-500' : avail >= 30 ? 'bg-amber-500' : 'bg-red-400'
   const scoreCls = score >= 75 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
     : score >= 50 ? 'text-amber-700 bg-amber-50 border-amber-200'
-    : 'text-orange-700 bg-orange-50 border-orange-200'
+      : 'text-orange-700 bg-orange-50 border-orange-200'
   const initials = emp.Name.split(' ').slice(0, 2).map((n: string) => n[0]).join('')
 
   return (
@@ -244,11 +253,10 @@ function EmpCard({ emp, score, matched, partial, avail }: {
                 const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
                 const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
                 return (
-                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
-                    isMatched ? 'bg-emerald-100 text-emerald-700' :
-                    isPartial ? 'bg-amber-50 text-amber-600' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>
+                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
+                      isPartial ? 'bg-amber-50 text-amber-600' :
+                        'bg-gray-100 text-gray-500'
+                    }`}>
                     {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
                   </span>
                 )
@@ -275,44 +283,43 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
 
   const techStack: string[] = (company['Tech Stack'] || '').split(',').map((s: string) => s.trim()).filter(Boolean)
   const domains: string[] = (company['Domains'] || '').split(',').map((s: string) => s.trim()).filter(Boolean)
-  const name: string = company['Company Name'] || ''
-  const initials = name.split(' ').filter((w: string) => w.length > 0).slice(0, 2).map((w: string) => w[0]).join('')
+  const companyName: string = company['Company Name'] || ''
+  const contactName: string = company['Contact Person'] || ''
+  const type: string = company['Type'] || 'External Partner'
+  const isConsultant = type === 'External Consultant'
+  const displayName = isConsultant ? contactName : companyName
+  const initials = displayName.split(' ').filter((w: string) => w.length > 0).slice(0, 2).map((w: string) => w[0]).join('')
+
   const scoreCls = score >= 60 ? 'text-blue-700 bg-blue-50 border-blue-200'
     : score >= 35 ? 'text-indigo-700 bg-indigo-50 border-indigo-200'
-    : 'text-slate-600 bg-slate-50 border-slate-200'
+      : 'text-slate-600 bg-slate-50 border-slate-200'
 
   return (
-    <div className={`rounded-xl border transition-all ${
-      assigned ? 'border-blue-400 bg-blue-50/30 shadow-sm' :
-      expanded ? 'border-blue-200 shadow-sm' :
-      'border-gray-100 hover:border-blue-200 bg-white'
-    }`}>
-      {/* Card header — mirrors EmpCard layout exactly */}
+    <div className={`rounded-xl border transition-all ${assigned ? 'border-blue-400 bg-blue-50/30 shadow-sm' :
+        expanded ? 'border-blue-200 shadow-sm' :
+          'border-gray-100 hover:border-blue-200 bg-white'
+      }`}>
       <div className="flex items-center gap-3 p-3">
-        {/* Square avatar — distinguishes external from internal (circle) */}
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0 border border-blue-200">
           {initials}
         </div>
 
-        {/* Info — clickable to expand */}
         <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={() => setExpanded(e => !e)}>
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-gray-900 truncate">{name}</p>
+            <p className="text-sm font-bold text-gray-900 truncate">{displayName}</p>
             <span className={`text-[10px] font-bold rounded-full border px-2 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
+            <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 uppercase tracking-wider ${isConsultant ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+              } border`}>{type}</span>
             {assigned && (
               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 flex items-center gap-0.5">
                 <Check size={9} /> Assigned
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-500 truncate">
-            {company['Contact Person']} · {company['Team Size'] ? `Team: ${company['Team Size'].split(',')[0].trim()}` : 'External Partner'}
-          </p>
+          {isConsultant && <p className="text-[10px] text-gray-400 font-medium">via {companyName}</p>}
         </div>
 
-        {/* Right side — availability + expand + assign */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Availability — external = always available unless noted */}
           <div className="w-24">
             <div className="flex justify-between mb-0.5">
               <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wide">Capacity</span>
@@ -329,7 +336,6 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
         </div>
       </div>
 
-      {/* Expanded detail — mirrors EmpCard expanded section */}
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
           <div className="grid grid-cols-2 gap-3 text-xs">
@@ -349,7 +355,6 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
             </div>
           </div>
 
-          {/* Tech Stack — same skill-tag style as EmpCard Skills */}
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Tech Stack</p>
             <div className="flex flex-wrap gap-1">
@@ -358,11 +363,10 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
                 const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
                 const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
                 return (
-                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${
-                    isMatched ? 'bg-emerald-100 text-emerald-700' :
-                    isPartial ? 'bg-amber-50 text-amber-600' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>
+                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
+                      isPartial ? 'bg-amber-50 text-amber-600' :
+                        'bg-gray-100 text-gray-500'
+                    }`}>
                     {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
                   </span>
                 )
@@ -387,7 +391,6 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
         </div>
       )}
 
-      {/* Assign button row — always visible at bottom */}
       <div className="px-3 pb-3 flex justify-end">
         {assigned ? (
           <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold px-3 py-1.5">
@@ -433,10 +436,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const [skillSearch, setSkillSearch] = useState('')
   const [activeSkillChip, setActiveSkillChip] = useState('')
   const [allocations, setAllocations] = useState<AllocResult[]>([])
-  // track which resource IDs were assigned by user from the TBD panel
-  const [tbdAssigned, setTbdAssigned] = useState<Record<string, string>>({}) // resourceId → company name
+  const [tbdAssigned, setTbdAssigned] = useState<Record<string, string>>({})
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null)
+  const [selectedAllocId, setSelectedAllocId] = useState<string | null>(null)
+  const [searchTab, setSearchTab] = useState<'Internal Team' | 'External Consultant' | 'External Partner'>('Internal Team')
 
   const handleClose = () => {
     setStep('choose'); setFileName(''); setProjectName(''); setClient('')
@@ -444,10 +448,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     setSkillSearch(''); setActiveSkillChip(''); setAllocations([])
     setTbdAssigned({})
     setEditingMilestoneId(null); setEditingResourceId(null)
+    setSelectedAllocId(null); setSearchTab('Internal Team')
     onClose()
   }
 
-  // ── Upload ────────────────────────────────────────────────────────────────
   const handleFile = (file: File) => {
     setFileName(file.name)
     setStep('uploading')
@@ -460,14 +464,6 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     }, 2400)
   }
 
-  const startManual = () => {
-    const today = new Date().toISOString().split('T')[0]
-    setMilestones([{ id: genId(), name: 'Kickoff & Planning', startDate: today, endDate: addDays(today, 13) }])
-    setResources([{ id: genId(), role: '', skills: [], responsibilities: '', bandwidth: 100 }])
-    setStep('s1')
-  }
-
-  // ── Milestone cascade logic ───────────────────────────────────────────────
   const updateMilestone = (idx: number, field: keyof MilestoneRow, value: string) => {
     setMilestones(prev => {
       const rows = prev.map(r => ({ ...r }))
@@ -484,7 +480,6 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
         rows[idx] = { ...rows[idx], [field]: value }
       }
 
-      // Cascade if dates changed
       if (field === 'startDate' || field === 'endDate') {
         let lastEnd = rows[idx].endDate
         for (let i = idx + 1; i < rows.length; i++) {
@@ -508,7 +503,6 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
   const delMilestone = (id: string) => setMilestones(prev => prev.filter(m => m.id !== id))
 
-  // ── Resource table ────────────────────────────────────────────────────────
   const updateResource = (idx: number, field: keyof ResourceRow, value: any) =>
     setResources(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r))
 
@@ -526,7 +520,6 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const removeSkill = (resIdx: number, skill: string) =>
     setResources(prev => prev.map((r, i) => i === resIdx ? { ...r, skills: r.skills.filter(s => s !== skill) } : r))
 
-  // ── Step 2 — dynamic skill filtering ─────────────────────────────────────
   const selectedRes = resources[selectedResIdx]
 
   const effectiveTerms = useMemo(() => {
@@ -546,26 +539,90 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     )
   }, [effectiveTerms])
 
-  // ── Step 3 — auto alloc + assign external ────────────────────────────────
   const proceedToStep3 = () => {
-    setAllocations(runAutoAlloc(resources))
+    const fresh = runAutoAlloc(resources)
+    setAllocations(fresh)
     setTbdAssigned({})
+    setSelectedAllocId(fresh[0]?.resourceId || null)
+    setSearchTab('Internal Team')
     setStep('s3')
+  }
+
+  const assignInternalS3 = (resourceId: string, emp: any) => {
+    setAllocations(prev => prev.map(a => {
+      if (a.resourceId !== resourceId) return a
+      if (a.tbdBW <= 0) return a
+      
+      const skills = resources.find(r => r.id === resourceId)?.skills || []
+      const { score } = scoreEmployee(emp, skills)
+      const avail = estAvailBW(emp, {}) 
+      const allocBW = Math.min(avail, a.tbdBW)
+      
+      const newAssign: Assignment = {
+        type: 'internal',
+        id: String(emp.ID),
+        name: emp.Name,
+        subText: emp.Department || 'Professional Services',
+        bw: allocBW,
+        score
+      }
+
+      const updated = [...a.assignments, newAssign].sort((a, b) => b.bw - a.bw)
+      const newTbd = Math.max(0, a.tbdBW - allocBW)
+      return {
+        ...a,
+        assignments: updated,
+        tbdBW: newTbd,
+        status: newTbd <= 0 ? 'matched' : 'partial'
+      }
+    }))
   }
 
   const assignExternal = (resourceId: string, company: any) => {
     setAllocations(prev => prev.map(a => {
       if (a.resourceId !== resourceId) return a
-      const newExtBW = a.tbdBW
-      const totalCovered = (a.internal?.bw || 0) + newExtBW
+      if (a.tbdBW <= 0) return a
+
+      const skills = resources.find(r => r.id === resourceId)?.skills || []
+      const { score } = scoreExternal(company, skills)
+      const allocBW = a.tbdBW 
+      
+      const newAssign: Assignment = {
+        type: 'external',
+        id: company['Company Name'] + (company['Contact Person'] || ''),
+        name: company['Contact Person'] || company['Company Name'],
+        subText: company['Type'] === 'External Consultant' ? company['Company Name'] : 'Partner Firm',
+        bw: allocBW,
+        score
+      }
+
+      const updated = [...a.assignments, newAssign]
       return {
         ...a,
-        external: { company: company['Company Name'], contact: company['Contact Person'], bw: newExtBW },
+        assignments: updated,
         tbdBW: 0,
-        status: totalCovered >= a.requiredBW ? 'matched' : 'partial',
+        status: 'matched'
       }
     }))
     setTbdAssigned(prev => ({ ...prev, [resourceId]: company['Company Name'] }))
+  }
+
+  const removeAssignment = (resourceId: string, assignmentId: string) => {
+    setAllocations(prev => prev.map(a => {
+      if (a.resourceId !== resourceId) return a
+      const removing = a.assignments.find(as => as.id === assignmentId)
+      if (!removing) return a
+      
+      const updated = a.assignments.filter(as => as.id !== assignmentId)
+      const newTbd = a.tbdBW + removing.bw
+      
+      return {
+        ...a,
+        assignments: updated,
+        tbdBW: newTbd,
+        status: 'partial'
+      }
+    }))
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -577,8 +634,8 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       'Project Type': 'New Proposal',
       'Delivery Manager': 'Unassigned',
       'Revenue Model': 'Milestone',
-      'Resource Aligned': allocations.filter(a => a.internal).map(a => a.internal?.name).join(', ') || 'TBD',
-      'Handled By': 'Internal Team',
+      'Resource Aligned': allocations.map(a => a.assignments.map(as => as.name).join(', ')).filter(Boolean).join(', ') || 'TBD',
+      'Handled By': 'Hybrid Team',
       'Add Info': '',
       // Formatted milestones (for display on Proposal page)
       'Milestones': milestones.map((m, i) => ({
@@ -623,11 +680,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
             <div className="flex items-center gap-1.5">
               {STEP_LABELS.map((s, i) => (
                 <div key={s.key} className="flex items-center gap-1.5">
-                  <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition-all ${
-                    i < currentStepIdx ? 'bg-emerald-100 text-emerald-700' :
-                    i === currentStepIdx ? 'bg-blue-600 text-white shadow-sm' :
-                    'bg-gray-100 text-gray-400'
-                  }`}>
+                  <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition-all ${i < currentStepIdx ? 'bg-emerald-100 text-emerald-700' :
+                      i === currentStepIdx ? 'bg-blue-600 text-white shadow-sm' :
+                        'bg-gray-100 text-gray-400'
+                    }`}>
                     {i < currentStepIdx ? <Check size={10} /> : <span className="w-3 text-center">{i + 1}</span>}
                     {s.label}
                   </div>
@@ -785,11 +841,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => setEditingMilestoneId(isEditing ? null : m.id)}
-                                  className={`p-1.5 rounded-lg transition-all ${
-                                    isEditing 
-                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' 
+                                  className={`p-1.5 rounded-lg transition-all ${isEditing
+                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
                                       : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-blue-50 hover:text-blue-600'
-                                  }`}
+                                    }`}
                                   title={isEditing ? 'Save' : 'Edit'}
                                 >
                                   {isEditing ? <Check size={14} /> : <Pencil size={12} />}
@@ -876,7 +931,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                       const val = (e.target as HTMLInputElement).value.trim()
                                       if ((e.key === 'Enter' || e.key === ',') && val) {
                                         addSkill(i, val)
-                                        ;(e.target as HTMLInputElement).value = ''
+                                          ; (e.target as HTMLInputElement).value = ''
                                         e.preventDefault()
                                       }
                                     }}
@@ -897,12 +952,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[80px] overflow-hidden">
-                                  <div 
-                                    className={`h-full rounded-full transition-all duration-500 ${
-                                      r.bandwidth >= 100 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 
-                                      r.bandwidth >= 50 ? 'bg-blue-500' : 'bg-amber-500'
-                                    }`} 
-                                    style={{ width: `${r.bandwidth}%` }} 
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-500 ${r.bandwidth >= 100 ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' :
+                                        r.bandwidth >= 50 ? 'bg-blue-500' : 'bg-amber-500'
+                                      }`}
+                                    style={{ width: `${r.bandwidth}%` }}
                                   />
                                 </div>
                                 <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 shadow-sm">
@@ -921,11 +975,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => setEditingResourceId(isEditing ? null : r.id)}
-                                  className={`p-1.5 rounded-lg transition-all ${
-                                    isEditing 
-                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200' 
+                                  className={`p-1.5 rounded-lg transition-all ${isEditing
+                                      ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
                                       : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600'
-                                  }`}
+                                    }`}
                                   title={isEditing ? 'Save' : 'Edit'}
                                 >
                                   {isEditing ? <Check size={14} /> : <Pencil size={12} />}
@@ -961,11 +1014,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   {resources.map((res, i) => (
                     <button key={res.id}
                       onClick={() => { setSelectedResIdx(i); setSkillSearch(''); setActiveSkillChip('') }}
-                      className={`w-full text-left rounded-xl px-3 py-2.5 transition-all border ${
-                        selectedResIdx === i
+                      className={`w-full text-left rounded-xl px-3 py-2.5 transition-all border ${selectedResIdx === i
                           ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                           : 'border-gray-100 hover:bg-gray-50 text-gray-700 hover:border-gray-200'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className={`text-[9px] font-bold uppercase tracking-wider ${selectedResIdx === i ? 'text-blue-200' : 'text-gray-400'}`}>R{i + 1}</span>
@@ -998,9 +1050,8 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                             {selectedRes.skills.map(s => (
                               <button key={s}
                                 onClick={() => { setSkillSearch(''); setActiveSkillChip(activeSkillChip === s ? '' : s) }}
-                                className={`text-[10px] font-bold rounded-full px-2 py-0.5 transition-all cursor-pointer ${
-                                  activeSkillChip === s ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                }`}
+                                className={`text-[10px] font-bold rounded-full px-2 py-0.5 transition-all cursor-pointer ${activeSkillChip === s ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                  }`}
                               >{s}</button>
                             ))}
                           </div>
@@ -1083,9 +1134,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-10">#</th>
                       <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase">Role</th>
                       <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-28">Required BW</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase">Assigned Resource</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-32">Type</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-24">Status</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase">Suggested Resource</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-28">Type</th>
+                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-20">Status</th>
+                      <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-16">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1111,53 +1163,82 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <div className="space-y-1">
-                              {alloc.internal && (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
-                                    {alloc.internal.name.split(' ').slice(0, 2).map((n: string) => n[0]).join('')}
+                            <div className="flex flex-col gap-1.5">
+                              {alloc.assignments.map(as => (
+                                <div key={as.id} className="flex items-center justify-between gap-3 p-1.5 rounded-lg border border-gray-100 bg-white shadow-sm hover:shadow-md transition-shadow group/item">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className={`w-7 h-7 rounded-lg ${as.type === 'internal' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-[10px] font-bold flex items-center justify-center flex-shrink-0 border`}>
+                                      {as.name.split(' ').slice(0, 2).map(n => n[0]).join('')}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-[11px] font-bold text-gray-900 truncate flex items-center gap-1.5">
+                                        {as.name}
+                                        <span className={`text-[8px] px-1 rounded uppercase font-bold tracking-tighter ${as.type === 'internal' ? 'bg-emerald-100/50 text-emerald-700' : 'bg-blue-100/50 text-blue-700'}`}>
+                                          {as.type === 'internal' ? 'I' : 'E'}
+                                        </span>
+                                      </p>
+                                      <p className="text-[10px] text-gray-400 truncate">
+                                        <span className="font-bold text-gray-600">{as.bw}% BW</span> · {as.score}% match {as.subText && `· ${as.subText}`}
+                                      </p>
+                                    </div>
                                   </div>
-                                  <span className="text-xs font-semibold text-gray-900">{alloc.internal.name}</span>
-                                  <span className="text-[10px] text-gray-400">{alloc.internal.bw}% · {alloc.internal.score}% skill match</span>
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); removeAssignment(alloc.resourceId, as.id) }}
+                                    className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover/item:opacity-100"
+                                    title="Remove Assignment"
+                                  >
+                                    <X size={12} />
+                                  </button>
                                 </div>
-                              )}
-                              {alloc.external && (
-                                <div className="flex items-center gap-2">
-                                  <div className="w-6 h-6 rounded-xl bg-blue-100 text-blue-700 text-[9px] font-bold flex items-center justify-center flex-shrink-0">
-                                    {alloc.external.company.split(' ').slice(0, 2).map((n: string) => n[0]).join('')}
-                                  </div>
-                                  <span className="text-xs font-semibold text-gray-900">{alloc.external.contact}</span>
-                                  <span className="text-[10px] text-gray-400">· {alloc.external.company} · {alloc.external.bw}%</span>
-                                </div>
-                              )}
+                              ))}
                               {alloc.tbdBW > 0 && (
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-4 h-4 rounded-full border-2 border-dashed border-amber-300 flex-shrink-0" />
-                                  <span className="text-[10px] text-amber-600 font-semibold">TBD — {alloc.tbdBW}% bandwidth open · assign below ↓</span>
+                                <div className="flex items-center gap-2 p-1.5 rounded-lg border border-dashed border-amber-200 bg-amber-50/20">
+                                  <div className="w-5 h-5 rounded-full border-2 border-dashed border-amber-300 flex-shrink-0" />
+                                  <span className="text-[9px] text-amber-600 font-bold tracking-tight uppercase">
+                                    {alloc.tbdBW}% Open Slot — Assign Below
+                                  </span>
                                 </div>
-                              )}
-                              {!alloc.internal && !alloc.external && alloc.tbdBW === 0 && (
-                                <span className="text-xs text-gray-400">No match found</span>
                               )}
                             </div>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">
-                              {alloc.internal && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 w-fit">🟢 Internal</span>}
-                              {alloc.external && <span className="text-[10px] font-bold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5 w-fit">🔵 External</span>}
-                              {alloc.tbdBW > 0 && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 w-fit">⚪ TBD</span>}
+                              {alloc.assignments.some(a => a.type === 'internal') && (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 w-fit border border-emerald-100">🟢 Internal</span>
+                              )}
+                              {alloc.assignments.some(a => a.type === 'external') && (
+                                <span className="text-[9px] font-bold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5 w-fit border border-blue-100">🔵 External</span>
+                              )}
+                              {alloc.tbdBW > 0 && (
+                                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 w-fit border border-amber-100">⚪ TBD</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3">
                             {alloc.status === 'matched' && alloc.tbdBW === 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600"><CheckCircle2 size={13} /> Matched</span>
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50/50 px-2.5 py-1 rounded-lg w-fit border border-emerald-100/50"><CheckCircle2 size={13} /> Matched</span>
                             )}
                             {alloc.status === 'partial' && alloc.tbdBW === 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600"><AlertTriangle size={13} /> Partial</span>
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-blue-50/50 px-2.5 py-1 rounded-lg w-fit border border-blue-100/50"><CheckCircle2 size={13} /> Partial</span>
                             )}
                             {alloc.tbdBW > 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600"><HelpCircle size={13} /> Open</span>
+                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600 bg-amber-50/50 px-2.5 py-1 rounded-lg w-fit border border-amber-100/50"><HelpCircle size={13} /> Open</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedAllocId(alloc.resourceId)
+                                document.getElementById('allocation-refinement')?.scrollIntoView({ behavior: 'smooth' })
+                              }}
+                              className={`p-1.5 rounded-lg transition-all ${selectedAllocId === alloc.resourceId
+                                  ? 'bg-amber-100 text-amber-600 shadow-inner'
+                                  : 'bg-gray-50 text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                                }`}
+                              title="Edit Allocation"
+                            >
+                              <Pencil size={14} />
+                            </button>
                           </td>
                         </tr>
                       )
@@ -1166,70 +1247,167 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 </table>
               </div>
 
-              {/* ── 3B/3C: TBD Analysis + External Resource Cards ── */}
-              {tbdSlots.length > 0 && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center">
-                      <HelpCircle size={13} className="text-amber-600" />
+              {/* ── 3B/3C: Allocation Refinement & Resource Manager ── */}
+              <div id="allocation-refinement" className="space-y-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-2.5 px-1">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Zap size={13} className="text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Allocation Refinement Manager</p>
+                    <p className="text-xs text-gray-400">Manually override any slot or assign consultants/partners to fill gaps</p>
+                  </div>
+                </div>
+
+                <div className="flex rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-sm" style={{ minHeight: 480 }}>
+                  {/* Left Panel: All Slots */}
+                  <div className="w-64 border-r border-gray-100 bg-gray-50/40 flex-shrink-0 flex flex-col">
+                    <div className="px-4 py-3 border-b border-gray-100 bg-gray-100/30 font-bold text-[10px] text-gray-500 uppercase tracking-widest text-center">
+                      Resource Slots
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-gray-900">TBD Analysis & External Resource Suggestions</p>
-                      <p className="text-xs text-gray-400">Assign an external technology partner to fill each open slot</p>
-                    </div>
+                      <div className="flex-1 overflow-y-auto p-2.5 space-y-2 custom-scrollbar">
+                        {allocations.map((alloc, i) => {
+                          const isActive = selectedAllocId === alloc.resourceId
+                          const isTbd = alloc.tbdBW > 0
+                          const isMatched = !isTbd
+                          
+                          let cardCls = 'bg-white border border-gray-100 text-gray-700 hover:border-gray-200'
+                          let badgeCls = 'bg-gray-100 text-gray-500'
+                          
+                          if (isActive) {
+                            cardCls = 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 border-emerald-600'
+                            badgeCls = 'bg-white/20 text-white'
+                          } else if (isTbd) {
+                            cardCls = 'bg-amber-50/50 border-amber-200 text-amber-800 hover:bg-amber-100/50'
+                            badgeCls = 'bg-amber-100 text-amber-600'
+                          } else if (isMatched) {
+                            cardCls = 'bg-blue-50/50 border-blue-200 text-blue-800 hover:bg-blue-100/50'
+                            badgeCls = 'bg-blue-100 text-blue-600'
+                          }
+
+                          return (
+                            <button key={alloc.resourceId}
+                              onClick={() => setSelectedAllocId(alloc.resourceId)}
+                              className={`w-full text-left rounded-xl px-3 py-3 transition-all space-y-1 relative group overflow-hidden ${cardCls}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-emerald-100' : 'text-gray-400'}`}>
+                                  Slot {i + 1}
+                                </span>
+                                <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 border border-current/10 ${badgeCls}`}>
+                                  {isTbd ? `${alloc.tbdBW}% Open` : 'Matched'}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold leading-tight truncate pr-4">{alloc.role}</p>
+                              {isActive && (
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-100">
+                                  <ChevronRight size={14} />
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
                   </div>
 
-                  {tbdSlots.map(alloc => {
-                    const res = resources.find(r => r.id === alloc.resourceId)
-                    if (!res) return null
-                    const reason = getTbdReason(alloc, res)
-                    const extCandidates = companies
-                      .map(c => ({ c, ...scoreExternal(c, res.skills) }))
-                      .filter(x => x.score >= 10)
-                      .sort((a, b) => b.score - a.score)
-
-                    return (
-                      <div key={alloc.resourceId} className="rounded-xl border border-amber-200 bg-amber-50/30 overflow-hidden">
-                        {/* TBD slot header */}
-                        <div className="flex items-center gap-3 px-5 py-3 border-b border-amber-100 bg-amber-50/60">
-                          <div className="w-6 h-6 rounded-full border-2 border-dashed border-amber-400 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-gray-900">
-                              {alloc.role}
-                              <span className="ml-2 text-[11px] font-semibold text-amber-600 bg-amber-100 rounded-full px-2 py-0.5">{alloc.tbdBW}% open</span>
-                            </p>
-                            <p className="text-xs text-gray-500 mt-0.5">{reason}</p>
-                          </div>
-                          <Building2 size={14} className="text-blue-400 flex-shrink-0" />
-                          <p className="text-xs text-blue-600 font-semibold">Suggested external partners</p>
+                  {/* Right Panel: Three-Tab Search Manager */}
+                  <div className="flex-1 flex flex-col bg-white">
+                    {(() => {
+                      const sel = allocations.find(a => a.resourceId === selectedAllocId)
+                      if (!sel) return (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
+                          <Users size={32} className="mb-2" />
+                          <p className="text-sm font-medium">Select a slot to refine allocation</p>
                         </div>
+                      )
+                      const res = resources.find(r => r.id === selectedAllocId)!
 
-                        {/* External cards — same design as EmpCard but blue-themed */}
-                        <div className="p-4 space-y-2">
-                          {extCandidates.length === 0 ? (
-                            <div className="flex items-center gap-2 text-gray-400 py-3">
-                              <Building2 size={16} className="opacity-40" />
-                              <p className="text-xs">No external partners found with matching skills</p>
+                      // Scorers
+                      const internalCands = (internalData as any).employees
+                        .map((emp: any) => ({ emp, ...scoreEmployee(emp, res.skills), avail: estAvailBW(emp, {}) }))
+                        .filter((c: any) => c.score >= 10 && c.avail > 0)
+                        .sort((a: any, b: any) => b.score - a.score)
+
+                      const extAll = (externalData as any).companies
+                        .map((c: any) => ({ c, ...scoreExternal(c, res.skills) }))
+                        .filter((x: any) => x.score >= 10)
+                        .sort((a: any, b: any) => b.score - a.score)
+
+                      const activeList = searchTab === 'Internal Team' ? internalCands : extAll.filter(x => (x.c.Type || 'External Partner') === searchTab)
+
+                      return (
+                        <>
+                          <div className="px-5 py-0 border-b border-gray-100 bg-white">
+                            <div className="flex items-center justify-between border-b border-gray-50 py-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-gray-900">
+                                  Refining Slot: <span className="text-blue-600">{sel.role}</span>
+                                </p>
+                                <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-md italic">
+                                  {getTbdReason(sel, res)}
+                                </p>
+                              </div>
+                              <div className="flex-shrink-0 flex items-center gap-2">
+                                <Search size={14} className="text-gray-400" />
+                                <span className="text-[10px] font-bold text-gray-600 border border-gray-100 bg-gray-50 px-2 py-0.5 rounded-full">Manual Override</span>
+                              </div>
                             </div>
-                          ) : (
-                            extCandidates.map(({ c, score, matched, partial }) => (
-                              <ExternalCard
-                                key={c['Company Name']}
-                                company={c}
-                                score={score}
-                                matched={matched}
-                                partial={partial}
-                                assigned={tbdAssigned[alloc.resourceId] === c['Company Name']}
-                                onAssign={() => assignExternal(alloc.resourceId, c)}
-                              />
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
+
+                            {/* Triple Tabs */}
+                            <div className="flex gap-6">
+                              {[
+                                { id: 'Internal Team', label: 'Internal Team', count: internalCands.length },
+                                { id: 'External Consultant', label: 'Consultants', count: extAll.filter(x => x.c.Type === 'External Consultant').length },
+                                { id: 'External Partner', label: 'Partners', count: extAll.filter(x => (x.c.Type || 'External Partner') === 'External Partner').length }
+                              ].map(t => (
+                                <button key={t.id} onClick={() => setSearchTab(t.id as any)}
+                                  className={`relative py-3 text-xs font-bold transition-all ${searchTab === t.id ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                                  <div className="flex items-center gap-2">
+                                    {t.label}
+                                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${searchTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{t.count}</span>
+                                  </div>
+                                  {searchTab === t.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-gray-50/20">
+                            {activeList.length === 0 ? (
+                              <div className="flex flex-col items-center justify-center h-48 text-gray-400 opacity-60">
+                                <Search size={32} className="mb-2" />
+                                <p className="text-sm font-medium">No matches in {searchTab}</p>
+                              </div>
+                            ) : (
+                              activeList.map((cand: any) => (
+                                searchTab === 'Internal Team' ? (
+                                  <div key={cand.emp.ID} className="relative group">
+                                    <EmpCard emp={cand.emp} score={cand.score} matched={cand.matched} partial={cand.partial} avail={cand.avail} />
+                                    <div className="absolute top-3 right-12 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button onClick={() => assignInternalS3(selectedAllocId!, cand.emp)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm">Assign Internal</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <ExternalCard
+                                    key={cand.c['Company Name'] + (cand.c['Contact Person'] || '')}
+                                    company={cand.c}
+                                    score={cand.score}
+                                    matched={cand.matched}
+                                    partial={cand.partial}
+                                    assigned={sel.assignments.some(as => as.id === (cand.c['Company Name'] + (cand.c['Contact Person'] || '')))}
+                                    onAssign={() => assignExternal(selectedAllocId!, cand.c)}
+                                  />
+                                )
+                              ))
+                            )}
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
                 </div>
-              )}
+              </div>
 
               {/* ── 3D: Final Summary ── */}
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-6 py-4">
@@ -1247,16 +1425,16 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   </div>
                   <div className="flex items-center gap-6 text-center">
                     <div>
-                      <p className="text-lg font-bold text-emerald-600">{allocations.filter(a => a.internal).length}</p>
+                      <p className="text-lg font-bold text-emerald-600">{allocations.reduce((acc, a) => acc + a.assignments.filter(as => as.type === 'internal').length, 0)}</p>
                       <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Internal</p>
                     </div>
                     <div>
-                      <p className="text-lg font-bold text-blue-600">{allocations.filter(a => a.external).length}</p>
+                      <p className="text-lg font-bold text-blue-600">{allocations.reduce((acc, a) => acc + a.assignments.filter(as => as.type === 'external').length, 0)}</p>
                       <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">External</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-amber-500">{allocations.filter(a => a.tbdBW > 0).length}</p>
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Open</p>
+                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Open Slots</p>
                     </div>
                   </div>
                 </div>
