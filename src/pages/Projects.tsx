@@ -9,8 +9,9 @@ import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTra
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon } from "lucide-react";
+import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon, Upload } from "lucide-react";
 import { toast } from "sonner";
+import NewProposalModal from "@/components/proposal/NewProposalModal";
 
 const formatDateReadable = (value: string | null | undefined) => {
   if (!value) return "-";
@@ -86,6 +87,8 @@ const Projects = () => {
   }) || [];
 
   const [showAddProject, setShowAddProject] = useState(false);
+  const [showNewProposal, setShowNewProposal] = useState(false);
+  const [showAddDropdown, setShowAddDropdown] = useState(false);
   const [showAddMilestone, setShowAddMilestone] = useState(false);
   const [showAssignMember, setShowAssignMember] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
@@ -348,6 +351,75 @@ const Projects = () => {
     toast.success(`✓ Project created · ${new Date().toLocaleTimeString()}`);
     setShowAddProject(false);
     navigate(`/projects?id=${proj.id}`);
+  };
+
+  const handleWizardSave = async (wizardData: any) => {
+    try {
+      // 1. Find or create client
+      let clientId: string;
+      const clientName = wizardData['Client'] || 'Unknown Client';
+      const existing = clients?.find((c) => c.name.toLowerCase() === clientName.toLowerCase());
+      if (existing) {
+        clientId = existing.id;
+      } else {
+        const { data, error } = await api.from("clients").insert({ name: clientName }).select().single();
+        if (error) { toast.error("Failed to create client"); return; }
+        clientId = data.id;
+        qc.invalidateQueries({ queryKey: ["clients"] });
+      }
+
+      // 2. Create project
+      const { data: proj, error: projErr } = await api.from("projects").insert({
+        client_id: clientId,
+        name: wizardData['Project Name'] || 'New Project',
+        code: wizardData['Project Code'] || null,
+        service_type: wizardData['Service Type'] || 'Outcome',
+        revenue_model: wizardData['Revenue Model'] || 'Milestone',
+        delivery_manager: wizardData['Delivery Manager'] || null,
+        client_spoc: wizardData['Client SPOC'] || null,
+        handled_by: wizardData['Handled By'] || null,
+      }).select().single();
+      if (projErr) { toast.error("Failed to create project"); return; }
+      await writeAuditLog("projects", proj.id, "INSERT", null, proj);
+
+      // 3. Create milestones from _rawMilestones
+      const rawMilestones: any[] = wizardData['_rawMilestones'] || [];
+      for (const ms of rawMilestones) {
+        const { data: msData } = await api.from("milestones").insert({
+          project_id: proj.id,
+          milestone_code: ms.code,
+          description: ms.description,
+          planned_start: ms.plannedStart || null,
+          planned_end: ms.plannedEnd || null,
+        }).select().single();
+        if (msData) await writeAuditLog("milestones", msData.id, "INSERT", null, msData);
+      }
+
+      // 4. Match and assign internal team members
+      const allocations: any[] = wizardData['_allocations'] || [];
+      for (const alloc of allocations) {
+        if (alloc.internal?.name) {
+          const match = members?.find((m) => m.name.toLowerCase() === alloc.internal.name.toLowerCase());
+          if (match) {
+            const { data: a } = await api.from("project_assignments").insert({
+              project_id: proj.id,
+              team_member_id: match.id,
+            }).select().single();
+            if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
+          }
+        }
+      }
+
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["milestones"] });
+      qc.invalidateQueries({ queryKey: ["project_assignments"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      toast.success(`✓ Project created from proposal · ${new Date().toLocaleTimeString()}`);
+      setShowNewProposal(false);
+      navigate(`/projects?id=${proj.id}`);
+    } catch (e) {
+      toast.error("Unexpected error creating project");
+    }
   };
 
   const [newMs, setNewMs] = useState({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
@@ -755,25 +827,59 @@ const Projects = () => {
         </div>
 
         {/* Project Selector */}
-        <div className="flex items-center gap-3 overflow-x-auto pb-2">
-          {filteredProjects.map((p) => {
-            const cl = clients?.find((c) => c.id === p.client_id);
-            return (
-              <button
-                key={p.id}
-                onClick={() => navigate(`/projects?id=${p.id}`)}
-                className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-semibold transition-colors ${p.id === selectedId
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                  }`}
-              >
-                {cl?.name} · {p.name}
-              </button>
-            );
-          })}
-          <button onClick={() => setShowAddProject(true)} className="shrink-0 flex items-center gap-1 rounded-full border border-primary bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors">
-            <Plus size={16} /> Add Project
-          </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
+            {filteredProjects.map((p) => {
+              const cl = clients?.find((c) => c.id === p.client_id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => navigate(`/projects?id=${p.id}`)}
+                  className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-semibold transition-colors ${p.id === selectedId
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    }`}
+                >
+                  {cl?.name} · {p.name}
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowAddDropdown(!showAddDropdown)}
+              className="flex items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors"
+            >
+              <Plus size={16} /> New Project <ChevronDown size={13} className={`transition-transform ${showAddDropdown ? 'rotate-180' : ''}`} />
+            </button>
+            {showAddDropdown && (
+              <div className="absolute right-0 top-full mt-1.5 z-30 w-52 rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+                <button
+                  onClick={() => { setShowAddDropdown(false); setShowAddProject(true); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-blue-50 transition-colors border-b border-gray-100"
+                >
+                  <Plus size={15} className="text-blue-600" />
+                  <div className="text-left">
+                    <p className="font-bold text-gray-900">Manual Entry</p>
+                    <p className="text-xs text-gray-500 font-normal">Fill in project details</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => { setShowAddDropdown(false); setShowNewProposal(true); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-blue-50 transition-colors"
+                >
+                  <Upload size={15} className="text-indigo-600" />
+                  <div className="text-left">
+                    <p className="font-bold text-gray-900">Upload Document</p>
+                    <p className="text-xs text-gray-500 font-normal">AI-extract from proposal</p>
+                  </div>
+                </button>
+              </div>
+            )}
+            {showAddDropdown && (
+              <div className="fixed inset-0 z-20" onClick={() => setShowAddDropdown(false)} />
+            )}
+          </div>
         </div>
 
         {project && (
@@ -1794,6 +1900,12 @@ const Projects = () => {
           );
         })()}
       </div>
+
+      <NewProposalModal
+        open={showNewProposal}
+        onClose={() => setShowNewProposal(false)}
+        onSave={handleWizardSave}
+      />
     </AppLayout >
   );
 };

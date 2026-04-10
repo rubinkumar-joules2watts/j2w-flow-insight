@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Overview from "./pages/Overview";
 import Projects from "./pages/Projects";
 import Resources from "./pages/Resources";
+import Proposal from "./pages/Proposal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -16,6 +17,7 @@ const AppInner = () => {
         <Route path="/" element={<Overview />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/resources" element={<Resources />} />
+        <Route path="/proposal" element={<Proposal />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
