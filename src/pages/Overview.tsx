@@ -236,7 +236,7 @@ const Overview = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 text-left">
-                  {["Client", "Project", "Type", "Manager", "Resources", "Status", "Invoice"].map((h) => (
+                  {["Client", "Project", "Type", "Manager", "Resources", "Status", "Signoff", "Invoice"].map((h) => (
                     <th key={h} className="px-6 py-4 font-bold text-gray-900 tracking-wide uppercase text-xs">{h}</th>
                   ))}
                 </tr>
@@ -246,8 +246,8 @@ const Overview = () => {
                   const client = clients?.find((c) => c.id === p.client_id);
                   const prog = getProjectMilestoneProgress(p.id);
                   const pMs = milestones?.filter((m) => m.project_id === p.id) || [];
-                  const raisedInvoices = pMs.filter((m) => m.invoice_status === "Raised").length;
-                  const pendingInvoices = pMs.filter((m) => m.invoice_status === "Pending").length;
+                  const signedOffCount = pMs.filter((m) => m.client_signoff_status === "Done").length;
+                  const completedInvoices = pMs.filter((m) => m.invoice_status === "Done").length;
                   const isEvenRow = idx % 2 === 0;
                   return (
                     <tr
@@ -263,8 +263,12 @@ const Overview = () => {
                       <td className="px-6 py-4 text-gray-600 min-w-[300px] break-words">{getProjectResources(p.id)}</td>
                       <td className="px-6 py-4"><span className={statusBadge(p.status)}>{p.status}</span></td>
                       <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
-                        <span className="font-bold text-gray-900">{raisedInvoices}</span>
-                        <span className="text-gray-600">/{pMs.length || 0} raised</span>
+                        <span className="font-bold text-gray-900">{signedOffCount}</span>
+                        <span className="text-gray-600">/{pMs.length || 0} signed off</span>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
+                        <span className="font-bold text-gray-900">{completedInvoices}</span>
+                        <span className="text-gray-600">/{pMs.length || 0} completed</span>
                       </td>
                     </tr>
                   );
