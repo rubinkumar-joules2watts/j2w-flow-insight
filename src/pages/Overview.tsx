@@ -14,6 +14,7 @@ interface DashboardCounters {
   on_track_projects: number;
   at_risk_projects: number;
   blocked_projects: number;
+  completed_projects: number;
 }
 
 const statusBadge = (s: string | null) => {
@@ -41,6 +42,7 @@ const Overview = () => {
     on_track_projects: 0,
     at_risk_projects: 0,
     blocked_projects: 0,
+    completed_projects: 0,
   });
 
   // Fetch dashboard counters
@@ -149,21 +151,56 @@ const Overview = () => {
         </div>
 
         {/* KPI Row - Dashboard Counters */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-4">
           {[
-            { icon: Zap, label: "Active Projects", value: counters.active_projects, color: "text-emerald-600", bgColor: "bg-emerald-100 border-emerald-300" },
-            { icon: AlertTriangle, label: "On Track Projects", value: counters.on_track_projects, color: "text-amber-600", bgColor: "bg-amber-100 border-amber-300" },
-            { icon: AlertOctagon, label: "At Risk Projects", value: counters.at_risk_projects, color: "text-red-600", bgColor: "bg-red-100 border-red-300" },
-            { icon: AlertCircle, label: "Blocked Projects", value: counters.blocked_projects, color: "text-blue-600", bgColor: "bg-blue-100 border-blue-300" },
+            {
+              icon: Zap,
+              label: "Active Projects",
+              value: counters.active_projects,
+              color: "text-emerald-700",
+              bgColor: "bg-emerald-50 border-emerald-200"
+            },
+            {
+              icon: AlertTriangle,
+              label: "On Track Projects",
+              value: counters.on_track_projects,
+              color: "text-amber-700",
+              bgColor: "bg-amber-50 border-amber-200"
+            },
+            {
+              icon: AlertOctagon,
+              label: "At Risk Projects",
+              value: counters.at_risk_projects,
+              color: "text-red-700",
+              bgColor: "bg-red-50 border-red-200"
+            },
+            {
+              icon: AlertCircle,
+              label: "Blocked Projects",
+              value: counters.blocked_projects,
+              color: "text-indigo-700",
+              bgColor: "bg-indigo-50 border-indigo-200"
+            },
+            {
+              icon: Zap,
+              label: "Completed Projects",
+              value: counters.completed_projects,
+              color: "text-white",
+              bgColor: "bg-emerald-600 border-emerald-700"
+            },
           ].map((kpi) => (
             <div
               key={kpi.label}
-              className={`flex items-center justify-between rounded-lg border ${kpi.bgColor} p-6 text-left shadow-sm transition-all`}
+              className={`flex flex-col items-center justify-center rounded-2xl border-2 ${kpi.bgColor} p-4 text-center shadow-lg transition-all hover:shadow-xl h-[160px] relative overflow-hidden group`}
             >
-              <div className="flex-1">
-                <p className="text-sm text-gray-700 font-semibold">{kpi.label}</p>
+              <p className={`text-sm font-black uppercase tracking-[0.2em] mb-2 ${kpi.label === "Completed Projects" ? "text-emerald-50" : "text-gray-700"}`}>
+                {kpi.label.replace(" Projects", "")}
+              </p>
+              <div className="flex items-center gap-3">
+                <p className={`text-6xl font-black tracking-tight ${kpi.label === "Completed Projects" ? "text-white" : "text-gray-950"}`}>
+                  {kpi.value}
+                </p>
               </div>
-              <p className="text-6xl font-bold text-black">{kpi.value}</p>
             </div>
           ))}
         </div>
@@ -206,9 +243,6 @@ const Overview = () => {
                       <td className="px-6 py-4 text-gray-600 whitespace-nowrap">
                         <span className="font-bold text-gray-900">{raisedInvoices}</span>
                         <span className="text-gray-600">/{pMs.length || 0} raised</span>
-                        {pendingInvoices > 0 && (
-                          <span className="ml-2 text-amber-400 font-medium">({pendingInvoices} pending)</span>
-                        )}
                       </td>
                     </tr>
                   );
