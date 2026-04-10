@@ -271,7 +271,7 @@ const Projects = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:8000/api/milestones/${actualId}`, {
+      const response = await fetch(`https://j2w-tracker-backend.onrender.com/api/milestones/${actualId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
