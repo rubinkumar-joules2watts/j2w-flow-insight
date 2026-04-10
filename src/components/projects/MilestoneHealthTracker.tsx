@@ -222,14 +222,14 @@ const EmptyCell = ({ weekNumber, allWeeks, milestoneCode, onClick }: EmptyCellPr
     >
       <button
         onClick={onClick}
-        className="w-5 h-5 rounded border-2 border-dashed border-gray-300 hover:border-gray-500 hover:bg-gray-100 transition-all opacity-60 hover:opacity-100 cursor-pointer flex items-center justify-center"
+        className="w-10 h-10 rounded border-2 border-dashed border-gray-300 hover:border-gray-500 hover:bg-gray-100 transition-all opacity-60 hover:opacity-100 cursor-pointer flex items-center justify-center"
         aria-label={`${milestoneCode || 'Milestone'} ${weekLabel}, Empty. Press to add status.`}
         title={`Add status for ${milestoneCode} - ${weekLabel}`}
       >
-        {milestoneCode && <span className="text-[9px] font-bold text-gray-400">{milestoneCode}</span>}
+        {milestoneCode && <span className="text-[10px] font-bold text-gray-400">{milestoneCode}</span>}
       </button>
       {showBadge && (
-        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400 font-bold text-lg pointer-events-none">
+        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400 font-bold text-2xl pointer-events-none">
           +
         </span>
       )}
@@ -253,11 +253,11 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCe
       >
         <button
           onClick={onClick}
-          className={`w-5 h-5 rounded transition-transform hover:scale-110 cursor-pointer ${bgColor} flex items-center justify-center`}
+          className={`w-10 h-10 rounded transition-transform hover:scale-110 cursor-pointer ${bgColor} flex items-center justify-center`}
           aria-label={ariaLabel}
           title={tooltipText}
         >
-          <span className="text-[9px] font-bold text-white">{milestone}</span>
+          <span className="text-xs font-bold text-white">{milestone}</span>
         </button>
         {showTooltip && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
@@ -279,11 +279,11 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCe
       >
         <button
           onClick={onClick}
-          className={`w-4 h-4 rounded-full transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
+          className={`w-12 h-12 rounded-full transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
           aria-label={ariaLabel}
           title={tooltipText}
         >
-          <span className="absolute text-[7px] font-bold text-white">{milestone}</span>
+          <span className="absolute text-[11px] font-bold text-white">{milestone}</span>
         </button>
         {showTooltip && (
           <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
@@ -305,12 +305,12 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCe
     >
       <button
         onClick={onClick}
-        className={`w-4 h-4 transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
+        className={`w-12 h-12 transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
         style={{ transform: "rotate(45deg)" }}
         aria-label={ariaLabel}
         title={tooltipText}
       >
-        <span className="absolute text-[7px] font-bold text-white" style={{ transform: "rotate(-45deg)" }}>{milestone}</span>
+        <span className="absolute text-[11px] font-bold text-white" style={{ transform: "rotate(-45deg)" }}>{milestone}</span>
       </button>
       {showTooltip && (
         <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
@@ -466,7 +466,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
                 <div
                   key={monthKey}
                   className="flex-shrink-0 border-r border-gray-200 py-2 px-2 text-center font-semibold text-xs text-gray-700"
-                  style={{ width: `${weekCount * 40}px` }}
+                  style={{ width: `${weekCount * 80}px` }}
                 >
                   {label}
                 </div>
@@ -485,7 +485,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
                     <div
                       key={`${monthKey}-week-${i}`}
                       className={`flex-shrink-0 flex items-center justify-center text-center py-1 text-xs text-gray-500 font-medium ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
-                      style={{ width: "40px" }}
+                      style={{ width: "80px" }}
                     >
                       {i + 1}
                     </div>
@@ -502,7 +502,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
               className={`flex ${phaseIdx < phases.length - 1 ? "border-b border-gray-200" : ""}`}
             >
               {/* Phase Label Column */}
-              <div className="w-48 flex-shrink-0 border-r border-gray-200 flex items-center px-4 py-4 bg-gray-50 border-b border-gray-200">
+              <div className="w-48 flex-shrink-0 border-r border-gray-200 flex items-center px-4 py-3 bg-gray-50 border-b border-gray-200">
                 <span className="text-xs font-bold text-gray-700 uppercase">{phase.label}</span>
               </div>
 
@@ -517,46 +517,56 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
                       let cellContent = null;
 
                       if (phase.type === "practice") {
-                        // For practice, show all milestones that have data for this week
-                        const milestonesForWeek = phaseData.filter((m) => m.weeks.some((w) => w.week_number === weekIdx));
-                        // Also identify milestones WITHOUT data for this week (empty cells)
-                        const milestonesWithoutData = phaseData.filter((m) => !m.weeks.some((w) => w.week_number === weekIdx));
+                        // Sort all milestones by code for consistent alignment (M1, M2, M3, etc.)
+                        const sortedMilestones = [...phaseData].sort((a, b) => {
+                          const codeA = a.milestone_code || "";
+                          const codeB = b.milestone_code || "";
+                          return codeA.localeCompare(codeB, undefined, { numeric: true });
+                        });
 
                         cellContent = (
-                          <div className="flex flex-col gap-1">
-                            {/* Show filled cells for milestones with data */}
-                            {milestonesForWeek.map((milestone) => {
+                          <div className="flex flex-col gap-4">
+                            {/* Render all milestones in sorted order - filled if has data, empty if not */}
+                            {sortedMilestones.map((milestone) => {
                               const week = milestone.weeks.find((w) => w.week_number === weekIdx);
-                              if (!week) return null;
-                              return (
-                                <WeekBlockCell
-                                  key={`${milestone.milestone_code}-${weekIdx}`}
-                                  week={week}
-                                  type="practice"
-                                  allWeeks={data.all_weeks}
-                                  milestone={milestone.milestone_code || ""}
-                                  onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, false)}
-                                />
-                              );
+                              if (week) {
+                                return (
+                                  <WeekBlockCell
+                                    key={`${milestone.milestone_code}-${weekIdx}`}
+                                    week={week}
+                                    type="practice"
+                                    allWeeks={data.all_weeks}
+                                    milestone={milestone.milestone_code || ""}
+                                    onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, false)}
+                                  />
+                                );
+                              } else {
+                                return (
+                                  <EmptyCell
+                                    key={`${milestone.milestone_code}-empty-${weekIdx}`}
+                                    weekNumber={weekIdx}
+                                    allWeeks={data.all_weeks}
+                                    milestoneCode={milestone.milestone_code || ""}
+                                    onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, true)}
+                                  />
+                                );
+                              }
                             })}
-                            {/* Show empty cells for milestones WITHOUT data - clickable to add status for each */}
-                            {milestonesWithoutData.map((milestone) => (
-                              <EmptyCell
-                                key={`${milestone.milestone_code}-empty-${weekIdx}`}
-                                weekNumber={weekIdx}
-                                allWeeks={data.all_weeks}
-                                milestoneCode={milestone.milestone_code || ""}
-                                onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, true)}
-                              />
-                            ))}
                           </div>
                         );
                       } else {
-                        // For signoff and invoice, show all milestones that have data for this week
-                        const milestonesForWeek = phaseData.filter((m) => m.weeks.some((w) => w.week_number === weekIdx));
+                        // Sort all milestones by code for consistent alignment (M1, M2, M3, etc.)
+                        const sortedMilestones = [...phaseData].sort((a, b) => {
+                          const codeA = a.milestone_code || "";
+                          const codeB = b.milestone_code || "";
+                          return codeA.localeCompare(codeB, undefined, { numeric: true });
+                        });
+
+                        // For signoff and invoice, only render milestones that have data for this week
+                        const milestonesForWeek = sortedMilestones.filter((m) => m.weeks.some((w) => w.week_number === weekIdx));
                         if (milestonesForWeek.length > 0) {
                           cellContent = (
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-6">
                               {milestonesForWeek.map((milestone) => {
                                 const week = milestone.weeks.find((w) => w.week_number === weekIdx);
                                 if (!week) return null;
@@ -579,8 +589,8 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
                       return (
                         <div
                           key={weekIdx}
-                          className={`flex-shrink-0 flex items-center justify-center py-3 px-2 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
-                          style={{ width: "40px", minHeight: "50px" }}
+                          className={`flex-shrink-0 flex flex-col items-center justify-around py-3 px-3 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
+                          style={{ width: "80px", minHeight: "100px" }}
                         >
                           {cellContent}
                         </div>
