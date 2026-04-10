@@ -184,7 +184,7 @@ const Overview = () => {
             },
             {
               icon: AlertCircle,
-              label: "Blocked Projects",
+              label: "Inactive Projects",
               statusValue: "Blocked",
               value: counters.blocked_projects,
               color: "text-red-700",

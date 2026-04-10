@@ -196,15 +196,6 @@ const Resources = () => {
                     <p className="text-[10px] text-gray-500">{m.role}</p>
                   </div>
                 </div>
-                <div className="mb-2">
-                  <div className="flex items-center justify-between text-[10px] text-gray-500 mb-1">
-                    <span>Engagement</span>
-                    <span className="font-bold text-gray-800">{m.engagement_pct}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-slate-700/50">
-                    <div className={`h-full rounded-full ${engagementColor(m.engagement_pct || 0)}`} style={{ width: `${m.engagement_pct}%` }} />
-                  </div>
-                </div>
                 <div className="flex flex-wrap gap-x-1 gap-y-1.5">
                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'External'
                     ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
