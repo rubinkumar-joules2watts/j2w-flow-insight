@@ -116,7 +116,7 @@ const Projects = () => {
     name: "",
     role: "Developer",
     reportsTo: "",
-    memberType: "Internal",
+    resourceType: "Internal",
   });
   const saveTimerRef = useRef<number>();
 
@@ -415,7 +415,7 @@ const Projects = () => {
       initials: deriveInitials(newHierarchyMember.name),
       role: newHierarchyMember.role.trim() || "Developer",
       reports_to: newHierarchyMember.reportsTo || null,
-      member_type: newHierarchyMember.memberType || "Internal",
+      resource_type: newHierarchyMember.resourceType || "Internal",
       engagement_pct: 100,
       color_hex: "#0EA5A6",
       is_active: true,
@@ -446,7 +446,7 @@ const Projects = () => {
     qc.invalidateQueries({ queryKey: ["audit_log"] });
 
     setShowAddHierarchyMember(false);
-    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", memberType: "Internal" });
+    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", resourceType: "Internal" });
     toast.success(`✓ Added ${payload.name} to hierarchy · ${new Date().toLocaleTimeString()}`);
   };
 
@@ -600,8 +600,10 @@ const Projects = () => {
             <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
               {member.role || "No role"}
             </p>
-            {member.member_type === "External" && (
-              <span className="mt-1 inline-block text-[8px] bg-accent/10 text-accent px-1 rounded-sm border border-accent/20 font-bold uppercase tracking-tighter">EXT</span>
+            {member.resource_type === "External" ? (
+              <span className="mt-1 inline-block text-[8px] bg-amber-400/10 text-amber-500 px-1 rounded-sm border border-amber-400/20 font-bold uppercase tracking-tighter">EXT</span>
+            ) : (
+              <span className="mt-1 inline-block text-[8px] bg-emerald-400/10 text-emerald-500 px-1 rounded-sm border border-emerald-400/20 font-bold uppercase tracking-tighter">INT</span>
             )}
           </div>
           {children.length > 0 && (
@@ -1672,10 +1674,10 @@ const Projects = () => {
               options={["", ...assignedMembers.map((m) => m.name)]}
             />
             <FormSelect
-              label="Member Type"
-              value={newHierarchyMember.memberType}
-              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, memberType: v })}
-              options={["Internal", "Vendor", "Contractor"]}
+              label="Resource Type"
+              value={newHierarchyMember.resourceType}
+              onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, resourceType: v })}
+              options={["Internal", "External"]}
               required
             />
           </FormSection>
