@@ -390,11 +390,22 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
         throw new Error("Failed to update milestone");
       }
 
-      // Close modal and refresh milestone health data immediately
+      // Close modal
       handleModalClose();
+
+      // Refresh milestone health data immediately
       if (data?.project_id) {
-        // Refetch milestone health directly
-        await qc.refetchQueries({ queryKey: ["milestone_health", data.project_id] });
+        try {
+          const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+          const healthRes = await fetch(`${baseUrl}/api/projects/${data.project_id}/milestone-health`);
+          if (healthRes.ok) {
+            const healthData = await healthRes.json();
+            // Update the cache with fresh data
+            qc.setQueryData(["milestone_health", data.project_id], healthData);
+          }
+        } catch (refreshErr) {
+          console.error("Failed to refresh milestone health:", refreshErr);
+        }
       }
     } catch (err) {
       console.error("Update failed:", err);

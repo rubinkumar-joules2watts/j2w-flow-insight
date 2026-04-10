@@ -153,4 +153,5 @@ export const useMilestoneHealth = (projectId: string) =>
     },
     enabled: !!projectId,
     staleTime: 0,
+    gcTime: 0,
   });
