@@ -139,12 +139,18 @@ const Projects = () => {
   useEffect(() => {
     const channel = api.channel("projects-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
-      .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => {
+        qc.invalidateQueries({ queryKey: ["milestones"] });
+        // Also refresh milestone health when milestones change
+        if (selectedId) {
+          qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
+        }
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_updates" }, () => qc.invalidateQueries({ queryKey: ["project_updates"] }))
       .subscribe();
     return () => { api.removeChannel(channel); };
-  }, [qc]);
+  }, [qc, selectedId]);
 
   const showSaved = (fieldId: string) => {
     setSavedField(fieldId);
