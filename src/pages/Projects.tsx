@@ -586,9 +586,9 @@ const Projects = () => {
           <div
             className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner"
             style={{
-              backgroundColor: member.color_hex || "#666",
+              backgroundColor: member.resource_type === 'External' ? '#F59E0B' : '#22C55E',
               color: "#fff",
-              boxShadow: `0 0 0 2px ${member.color_hex}44`
+              boxShadow: `0 0 0 2px ${member.resource_type === 'External' ? '#F59E0B' : '#22C55E'}44`
             }}
           >
             {member.initials || deriveInitials(member.name)}
@@ -601,9 +601,9 @@ const Projects = () => {
               {member.role || "No role"}
             </p>
             {member.resource_type === "External" ? (
-              <span className="mt-1 inline-block text-[8px] bg-amber-400/10 text-amber-500 px-1 rounded-sm border border-amber-400/20 font-bold uppercase tracking-tighter">EXT</span>
+              <span className="mt-1 inline-block text-[7px] bg-amber-400/10 text-amber-500 px-1.5 py-0.5 rounded-sm border border-amber-400/20 font-extrabold uppercase tracking-widest">EXTERNAL</span>
             ) : (
-              <span className="mt-1 inline-block text-[8px] bg-emerald-400/10 text-emerald-500 px-1 rounded-sm border border-emerald-400/20 font-bold uppercase tracking-tighter">INT</span>
+              <span className="mt-1 inline-block text-[7px] bg-emerald-400/10 text-emerald-500 px-1.5 py-0.5 rounded-sm border border-emerald-400/20 font-extrabold uppercase tracking-widest">INTERNAL</span>
             )}
           </div>
           {children.length > 0 && (
