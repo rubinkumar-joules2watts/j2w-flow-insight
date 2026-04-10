@@ -6,6 +6,7 @@ interface MilestoneHealthTrackerProps {
   data?: MilestoneHealthData;
   loading?: boolean;
   error?: Error | null;
+  onDataRefresh?: (projectId: string) => Promise<void>;
 }
 
 interface ModalState {
@@ -321,7 +322,7 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCe
   );
 };
 
-export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealthTrackerProps) => {
+export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: MilestoneHealthTrackerProps) => {
   const [modalState, setModalState] = useState<ModalState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -387,9 +388,11 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
         throw new Error("Failed to update milestone");
       }
 
-      // Close modal and optionally refresh data
+      // Close modal and refresh data
       handleModalClose();
-      // Note: You may want to refetch the milestone health data here
+      if (onDataRefresh && data?.project_id) {
+        await onDataRefresh(data.project_id);
+      }
     } catch (err) {
       console.error("Update failed:", err);
       alert(`Error updating milestone: ${err instanceof Error ? err.message : "Unknown error"}`);

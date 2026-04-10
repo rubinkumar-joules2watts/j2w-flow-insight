@@ -963,7 +963,16 @@ const Projects = () => {
             />
 
             {/* Milestone Health Tracker */}
-            {selectedId && <MilestoneHealthTracker data={milestoneHealth} loading={milestoneHealthLoading} error={milestoneHealthError} />}
+            {selectedId && (
+              <MilestoneHealthTracker
+                data={milestoneHealth}
+                loading={milestoneHealthLoading}
+                error={milestoneHealthError}
+                onDataRefresh={async (projectId) => {
+                  await qc.invalidateQueries({ queryKey: ["milestone_health", projectId] });
+                }}
+              />
+            )}
 
             {/* Milestone Tracker - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
