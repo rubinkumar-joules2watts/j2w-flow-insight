@@ -152,4 +152,5 @@ export const useMilestoneHealth = (projectId: string) =>
       return (await res.json()) as MilestoneHealthData;
     },
     enabled: !!projectId,
+    staleTime: 0,
   });

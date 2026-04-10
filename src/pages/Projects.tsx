@@ -141,9 +141,9 @@ const Projects = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => {
         qc.invalidateQueries({ queryKey: ["milestones"] });
-        // Also refresh milestone health when milestones change
+        // Force refetch milestone health when milestones change
         if (selectedId) {
-          qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
+          qc.refetchQueries({ queryKey: ["milestone_health", selectedId] });
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
