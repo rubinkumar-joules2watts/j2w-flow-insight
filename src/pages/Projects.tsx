@@ -91,6 +91,7 @@ const Projects = () => {
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [confirmDeleteMilestone, setConfirmDeleteMilestone] = useState<string | null>(null);
   const [confirmDeleteProject, setConfirmDeleteProject] = useState<string | null>(null);
+  const [confirmDeleteUpdate, setConfirmDeleteUpdate] = useState<string | null>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState("all");
   const [projectStatusFilter, setProjectStatusFilter] = useState("all");
@@ -504,6 +505,21 @@ const Projects = () => {
     }
   };
 
+  const handleDeleteUpdate = async (id: string) => {
+    try {
+      const response = await fetch(apiUrl(`/api/projects_update/${id}`), {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("API error");
+      qc.invalidateQueries({ queryKey: ["project_updates"] });
+      toast.success("Timeline update deleted");
+    } catch (err) {
+      toast.error("Failed to delete update");
+    } finally {
+      setConfirmDeleteUpdate(null);
+    }
+  };
+
   const handleDeleteDocument = async (docId: string) => {
     const { error } = await api.from("project_documents").delete().eq("id", docId);
     if (error) toast.error("Failed to delete");
@@ -893,14 +909,14 @@ const Projects = () => {
                         className={`flex h-7 w-7 items-center justify-center rounded-md border transition-all ${pendingUpdateFile ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
                         title={pendingUpdateFile ? `Ready to upload: ${pendingUpdateFile.name}` : "Attach document"}
                       >
-                        <Paperclip size={14} className={pendingUpdateFile ? "animate-pulse" : ""} />
+                        <Paperclip size={18} className={pendingUpdateFile ? "animate-pulse" : ""} />
                       </button>
                       <button
                         onClick={handleAddUpdate}
                         disabled={isAddingUpdate || (!newUpdate.trim() && !pendingUpdateFile)}
                         className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 disabled:opacity-50"
                       >
-                        <Send size={14} />
+                        <Send size={18} />
                       </button>
                     </div>
                   </div>
@@ -1002,7 +1018,14 @@ const Projects = () => {
                                     disabled={uploadingUpdateId === u.id}
                                     title="Attach document"
                                   >
-                                    {uploadingUpdateId === u.id ? <Loader2 size={10} className="animate-spin" /> : <Paperclip size={10} />}
+                                    {uploadingUpdateId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteUpdate(u.id)}
+                                    className="text-muted-foreground hover:text-red-400 transition-colors"
+                                    title="Delete update"
+                                  >
+                                    <Trash2 size={14} />
                                   </button>
                                   <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
                                     Manual
@@ -1726,6 +1749,32 @@ const Projects = () => {
                   </button>
                   <button onClick={() => handleRemoveMember(confirmRemove)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
                     Remove Member
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Delete Update Modal */}
+        {confirmDeleteUpdate && (() => {
+          const update = projUpdates.find((u) => u.id === confirmDeleteUpdate);
+          if (!update) return null;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteUpdate(null)}>
+              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">Delete Update</h3>
+                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete this update from <span className="font-semibold">{formatDateReadable(update.activity_date)}</span>?</p>
+                  <p className="mt-2 text-xs text-gray-500 line-clamp-2 italic">"{update.content}"</p>
+                  <p className="mt-2 text-xs text-red-500">This action cannot be undone.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDeleteUpdate(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={() => handleDeleteUpdate(confirmDeleteUpdate)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
+                    Delete
                   </button>
                 </div>
               </div>
