@@ -380,7 +380,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
     setIsSaving(true);
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const response = await fetch(`${baseUrl}/api/milestones/${modalState.milestoneId}`, {
+      const response = await fetch(`${baseUrl}api/milestones/${modalState.milestoneId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
