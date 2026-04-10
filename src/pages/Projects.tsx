@@ -138,10 +138,13 @@ const Projects = () => {
 
   // Sync project filter with URL parameter
   useEffect(() => {
-    if (selectedId) {
-      setProjectFilter(selectedId);
+    const idFromUrl = searchParams.get("id");
+    if (idFromUrl) {
+      setProjectFilter(idFromUrl);
+    } else {
+      setProjectFilter("all");
     }
-  }, [selectedId]);
+  }, [searchParams]);
 
   // Realtime subscription
   useEffect(() => {
@@ -709,6 +712,8 @@ const Projects = () => {
               setProjectFilter(value);
               if (value !== "all") {
                 navigate(`/projects?id=${value}`);
+              } else {
+                navigate("/projects");
               }
             }}
             label="Project"
