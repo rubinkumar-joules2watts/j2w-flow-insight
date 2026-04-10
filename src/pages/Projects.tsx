@@ -216,9 +216,12 @@ const Projects = () => {
 
     await writeAuditLog("milestones", id, "UPDATE", oldValues, next, changedFields);
     qc.invalidateQueries({ queryKey: ["milestones"] });
+    if (selectedId) {
+      qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
+    }
     toast.success(`✓ Updated ${changedFields.join(", ")} · ${new Date().toLocaleTimeString()}`);
     showSaved(`${id}-${field}`);
-  }, [qc, milestones]);
+  }, [qc, milestones, selectedId]);
 
   const updateMilestoneViaAPI = useCallback(async (milestoneCode: string, field: string, value: string | null) => {
     // Get the milestone UUID from milestone-health API response

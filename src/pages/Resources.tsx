@@ -188,7 +188,7 @@ const Resources = () => {
             return (
               <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-gray-300/50 bg-gradient-to-b from-gray-100/50 to-gray-50/30 p-4 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm" style={{ backgroundColor: m.color_hex || "#666", color: "#fff" }}>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'External' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
                     {m.initials}
                   </div>
                   <div>
@@ -294,6 +294,7 @@ const Resources = () => {
         </div>
 
         {/* Gantt Timeline */}
+        {/* Gantt Timeline - Commented out for now
         <div className="rounded-lg border border-gray-200 bg-white shadow-lg overflow-hidden">
           <div className="border-b border-gray-200 px-6 py-4 bg-gradient-to-r from-blue-50 to-blue-100/50">
             <h3 className="text-lg font-bold text-gray-900">Work Allocation Timeline (2026)</h3>
@@ -337,6 +338,7 @@ const Resources = () => {
             </table>
           </div>
         </div>
+        */}
 
         {/* Add Member Modal */}
         <FormModal title="Add Team Member" isOpen={showAddMember} onClose={() => setShowAddMember(false)}>
@@ -376,12 +378,6 @@ const Resources = () => {
               onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
               options={["Internal", "External"]}
               required
-            />
-            <FormRange
-              label="Engagement"
-              value={newMember.engagementPct}
-              onChange={(v) => setNewMember({ ...newMember, engagementPct: v })}
-              unit="%"
             />
           </FormSection>
           <FormSection title="Projects">
@@ -498,13 +494,6 @@ const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () =>
           options={["Internal", "External"]}
           disabled={isLoading}
           required
-        />
-        <FormRange
-          label="Engagement"
-          value={form.engagementPct}
-          onChange={(v) => setForm({ ...form, engagementPct: v })}
-          unit="%"
-          disabled={isLoading}
         />
       </FormSection>
       <FormActions

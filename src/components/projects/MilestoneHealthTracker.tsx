@@ -398,7 +398,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh }: 
       if (data?.project_id) {
         try {
           const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-          const healthRes = await fetch(`${baseUrl}api/projects/${data.project_id}/milestone-health`);
+          const healthRes = await fetch(`${baseUrl}/api/projects/${data.project_id}/milestone-health`);
           if (healthRes.ok) {
             const healthData = await healthRes.json();
             // Update the cache with fresh data
