@@ -22,6 +22,7 @@ export type Milestone = {
 export type TeamMember = {
   id: string; name: string; initials: string | null; role: string;
   reports_to: string | null; member_type: string | null;
+  resource_type: string | null;
   engagement_pct: number | null; color_hex: string | null;
   is_active: boolean | null;
 };
@@ -31,10 +32,10 @@ export type ProjectAssignment = {
   start_date: string | null; end_date: string | null;
 };
 export type ProjectUpdate = {
-  id: string; 
-  project_id: string; 
-  content: string; 
-  activity_date: string; 
+  id: string;
+  project_id: string;
+  content: string;
+  activity_date: string;
   created_at: string;
   category?: "Internal" | "Sales" | "Cadence";
   file_path?: string;
@@ -84,39 +85,49 @@ export type MilestoneHealthData = {
 };
 
 export const useClients = () =>
-  useQuery({ queryKey: ["clients"], queryFn: async () => {
-    const { data, error } = await api.from("clients").select("*");
-    if (error) throw error;
-    return data as Client[];
-  }});
+  useQuery({
+    queryKey: ["clients"], queryFn: async () => {
+      const { data, error } = await api.from("clients").select("*");
+      if (error) throw error;
+      return data as Client[];
+    }
+  });
 
 export const useProjects = () =>
-  useQuery({ queryKey: ["projects"], queryFn: async () => {
-    const { data, error } = await api.from("projects").select("*");
-    if (error) throw error;
-    return data as Project[];
-  }});
+  useQuery({
+    queryKey: ["projects"], queryFn: async () => {
+      const { data, error } = await api.from("projects").select("*");
+      if (error) throw error;
+      return data as Project[];
+    }
+  });
 
 export const useMilestones = () =>
-  useQuery({ queryKey: ["milestones"], queryFn: async () => {
-    const { data, error } = await api.from("milestones").select("*");
-    if (error) throw error;
-    return data as Milestone[];
-  }});
+  useQuery({
+    queryKey: ["milestones"], queryFn: async () => {
+      const { data, error } = await api.from("milestones").select("*");
+      if (error) throw error;
+      return data as Milestone[];
+    }
+  });
 
 export const useTeamMembers = () =>
-  useQuery({ queryKey: ["team_members"], queryFn: async () => {
-    const { data, error } = await api.from("team_members").select("*");
-    if (error) throw error;
-    return data as TeamMember[];
-  }});
+  useQuery({
+    queryKey: ["team_members"], queryFn: async () => {
+      const { data, error } = await api.from("team_members").select("*");
+      if (error) throw error;
+      return data as TeamMember[];
+    }
+  });
 
 export const useAssignments = () =>
-  useQuery({ queryKey: ["project_assignments"], queryFn: async () => {
-    const { data, error } = await api.from("project_assignments").select("*");
-    if (error) throw error;
-    return data as ProjectAssignment[];
-  }});
+  useQuery({
+    queryKey: ["project_assignments"], queryFn: async () => {
+      const { data, error } = await api.from("project_assignments").select("*");
+      if (error) throw error;
+      return data as ProjectAssignment[];
+    }
+  });
 
 export type AuditEntry = {
   id: string; table_name: string; record_id: string | null; action: string;
@@ -125,25 +136,31 @@ export type AuditEntry = {
 };
 
 export const useAuditLog = () =>
-  useQuery({ queryKey: ["audit_log"], queryFn: async () => {
-    const { data, error } = await api.from("audit_log").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    return data as AuditEntry[];
-  }});
+  useQuery({
+    queryKey: ["audit_log"], queryFn: async () => {
+      const { data, error } = await api.from("audit_log").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as AuditEntry[];
+    }
+  });
 
 export const useProjectUpdates = () =>
-  useQuery({ queryKey: ["project_updates"], queryFn: async () => {
-    const { data, error } = await api.from("project_updates").select("*").order("activity_date", { ascending: true });
-    if (error) throw error;
-    return data as ProjectUpdate[];
-  }});
+  useQuery({
+    queryKey: ["project_updates"], queryFn: async () => {
+      const { data, error } = await api.from("project_updates").select("*").order("activity_date", { ascending: true });
+      if (error) throw error;
+      return data as ProjectUpdate[];
+    }
+  });
 
 export const useProjectDocuments = () =>
-  useQuery({ queryKey: ["project_documents"], queryFn: async () => {
-    const { data, error } = await api.from("project_documents").select("*").order("created_at", { ascending: false });
-    if (error) throw error;
-    return data as ProjectDocument[];
-  }});
+  useQuery({
+    queryKey: ["project_documents"], queryFn: async () => {
+      const { data, error } = await api.from("project_documents").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as ProjectDocument[];
+    }
+  });
 
 export const useMilestoneHealth = (projectId: string) =>
   useQuery({

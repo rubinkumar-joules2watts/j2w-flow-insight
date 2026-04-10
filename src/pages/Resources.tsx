@@ -205,9 +205,15 @@ const Resources = () => {
                     <div className={`h-full rounded-full ${engagementColor(m.engagement_pct || 0)}`} style={{ width: `${m.engagement_pct}%` }} />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-x-1 gap-y-1.5">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'External'
+                    ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
+                    : "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
+                    }`}>
+                    {m.resource_type || "Internal"}
+                  </span>
                   {memberProjects.map((p) => (
-                    <span key={p} className="rounded-full bg-slate-700/50 px-1.5 py-0.5 text-[9px] text-gray-700 border border-slate-600/30">{p}</span>
+                    <span key={p} className="rounded-full bg-slate-700/30 px-2 py-0.5 text-[9px] font-medium text-gray-600 border border-slate-600/20 shadow-sm">{p}</span>
                   ))}
                 </div>
                 <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
