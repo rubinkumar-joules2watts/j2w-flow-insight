@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MilestoneHealthData, WeekData } from "@/hooks/useData";
+import { MilestoneHealthData, MilestoneHealthPhase, WeekData } from "@/hooks/useData";
 import { Loader2 } from "lucide-react";
 
 interface MilestoneHealthTrackerProps {
@@ -8,11 +8,32 @@ interface MilestoneHealthTrackerProps {
   error?: Error | null;
 }
 
+interface ModalState {
+  isOpen: boolean;
+  type: "practice" | "signoff" | "invoice";
+  milestone: MilestoneHealthPhase;
+  milestoneId: string;
+  weekNumber?: number;
+  weekLabel?: string;
+  currentStatus?: string | null;
+  isEmpty: boolean;
+}
+
 const getStatusColor = (color: string): string => {
   const colorMap: Record<string, string> = {
-    blue: "bg-blue-500",
+    green: "#22c55e",
+    blue: "#3b82f6",
+    orange: "#f97316",
+    red: "#ef4444",
+    gray: "#d1d5db",
+  };
+  return colorMap[color] || "#d1d5db";
+};
+
+const getStatusColorClass = (color: string): string => {
+  const colorMap: Record<string, string> = {
     green: "bg-green-500",
-    amber: "bg-amber-500",
+    blue: "bg-blue-500",
     orange: "bg-orange-500",
     red: "bg-red-500",
     gray: "bg-gray-300",
@@ -20,11 +41,206 @@ const getStatusColor = (color: string): string => {
   return colorMap[color] || "bg-gray-300";
 };
 
-const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; type: "practice" | "signoff" | "invoice"; allWeeks: Record<string, { label: string }>; milestone?: string }) => {
+interface StatusEditorModalProps {
+  isOpen: boolean;
+  milestone: MilestoneHealthPhase;
+  type: "practice" | "signoff" | "invoice";
+  weekLabel?: string;
+  isEmpty?: boolean;
+  onClose: () => void;
+  onSave: (updates: Record<string, unknown>) => Promise<void>;
+}
+
+const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false, onClose, onSave }: StatusEditorModalProps) => {
+  const [selectedStatus, setSelectedStatus] = useState(
+    isEmpty
+      ? type === "practice"
+        ? "On Track"
+        : "Pending"
+      : type === "practice"
+        ? milestone.status
+        : type === "signoff"
+          ? milestone.signoff_status || "Pending"
+          : milestone.invoice_status || "Pending"
+  );
+  const [selectedDate, setSelectedDate] = useState(
+    type === "signoff" && milestone.date ? milestone.date.split("T")[0] : type === "invoice" && milestone.date ? milestone.date.split("T")[0] : new Date().toISOString().split("T")[0]
+  );
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const updates: Record<string, unknown> = {};
+
+      if (type === "practice") {
+        updates.status = selectedStatus;
+      } else if (type === "signoff") {
+        updates.client_signoff_status = selectedStatus;
+        if (selectedStatus === "Done") {
+          updates.signedoff_date = selectedDate;
+        }
+      } else if (type === "invoice") {
+        updates.invoice_status = selectedStatus;
+        if (selectedStatus === "Done") {
+          updates.invoice_raised_date = selectedDate;
+        }
+      }
+
+      await onSave(updates);
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const modalTitle = isEmpty ? `Add Status - ${milestone.milestone_code}` : `Update ${milestone.milestone_code}`;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-lg w-96 p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-lg font-semibold text-gray-800">{modalTitle}</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 text-xl">
+            ✕
+          </button>
+        </div>
+        {weekLabel && (
+          <p className="text-xs text-gray-500 mb-4">{weekLabel}</p>
+        )}
+
+        <div className="space-y-4">
+          {/* Status Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {type === "practice" && (
+                <>
+                  <option value="On Track">On Track</option>
+                  <option value="At Risk">At Risk</option>
+                  <option value="Blocked">Blocked</option>
+                  <option value="Completed">Completed</option>
+                </>
+              )}
+              {(type === "signoff" || type === "invoice") && (
+                <>
+                  <option value="Pending">Pending</option>
+                  <option value="Done">Done</option>
+                </>
+              )}
+            </select>
+          </div>
+
+          {/* Date Selector (for signoff/invoice when Done) */}
+          {(type === "signoff" || type === "invoice") && selectedStatus === "Done" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {type === "signoff" ? "Signoff Date" : "Invoice Date"}
+              </label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                max={new Date().toISOString().split("T")[0]}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
+          {/* Info Text */}
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-700">
+            {isEmpty ? (
+              <>
+                {type === "practice" && "Add a status for this milestone in this week."}
+                {type === "signoff" && "Record when the client signed off."}
+                {type === "invoice" && "Record when the invoice was raised."}
+              </>
+            ) : (
+              <>
+                {type === "practice" && "Update the milestone status for this week."}
+                {type === "signoff" && "Mark as Done when client has signed off."}
+                {type === "invoice" && "Mark as Done when invoice has been raised."}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-2 justify-end mt-6">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+            disabled={isSaving}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50"
+            disabled={isSaving}
+          >
+            {isSaving ? "Saving..." : isEmpty ? "Add" : "Update"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface WeekBlockCellProps {
+  week: WeekData;
+  type: "practice" | "signoff" | "invoice";
+  allWeeks: Record<string, { label: string }>;
+  milestone: string;
+  onClick: () => void;
+}
+
+interface EmptyCellProps {
+  weekNumber: number;
+  allWeeks: Record<string, { label: string }>;
+  milestoneCode?: string;
+  onClick: () => void;
+}
+
+const EmptyCell = ({ weekNumber, allWeeks, milestoneCode, onClick }: EmptyCellProps) => {
+  const [showBadge, setShowBadge] = useState(false);
+  const weekLabel = allWeeks[String(weekNumber)]?.label || `Week ${weekNumber}`;
+
+  return (
+    <div
+      className="relative flex items-center justify-center"
+      onMouseEnter={() => setShowBadge(true)}
+      onMouseLeave={() => setShowBadge(false)}
+    >
+      <button
+        onClick={onClick}
+        className="w-5 h-5 rounded border-2 border-dashed border-gray-300 hover:border-gray-500 hover:bg-gray-100 transition-all opacity-60 hover:opacity-100 cursor-pointer flex items-center justify-center"
+        aria-label={`${milestoneCode || 'Milestone'} ${weekLabel}, Empty. Press to add status.`}
+        title={`Add status for ${milestoneCode} - ${weekLabel}`}
+      >
+        {milestoneCode && <span className="text-[9px] font-bold text-gray-400">{milestoneCode}</span>}
+      </button>
+      {showBadge && (
+        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-400 font-bold text-lg pointer-events-none">
+          +
+        </span>
+      )}
+    </div>
+  );
+};
+
+const WeekBlockCell = ({ week, type, allWeeks, milestone, onClick }: WeekBlockCellProps) => {
   const [showTooltip, setShowTooltip] = useState(false);
-  const weekLabel = allWeeks[String(week.week_number)]?.label || `W${week.week_number}`;
-  const colorClass = getStatusColor(week.color);
-  const tooltipText = milestone ? `${milestone} - ${weekLabel}: ${week.status}` : `${weekLabel}: ${week.status}`;
+  const weekLabel = allWeeks[String(week.week_number)]?.label || `Week ${week.week_number}`;
+  const bgColor = getStatusColorClass(week.color);
+  const tooltipText = `${milestone} - ${weekLabel}\n${week.status}`;
+  const ariaLabel = `${milestone} ${weekLabel}, ${week.status}. Press to edit.`;
 
   if (type === "practice") {
     return (
@@ -33,10 +249,19 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; ty
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
-        <div className={`w-4 h-4 rounded-sm ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
+        <button
+          onClick={onClick}
+          className={`w-5 h-5 rounded transition-transform hover:scale-110 cursor-pointer ${bgColor} flex items-center justify-center`}
+          aria-label={ariaLabel}
+          title={tooltipText}
+        >
+          <span className="text-[9px] font-bold text-white">{milestone}</span>
+        </button>
         {showTooltip && (
-          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-            {tooltipText}
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
+            <div>{milestone}</div>
+            <div>{weekLabel}</div>
+            <div>{week.status}</div>
           </div>
         )}
       </div>
@@ -50,10 +275,19 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; ty
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
       >
-        <div className={`w-3 h-3 rounded-full ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} />
+        <button
+          onClick={onClick}
+          className={`w-4 h-4 rounded-full transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
+          aria-label={ariaLabel}
+          title={tooltipText}
+        >
+          <span className="absolute text-[7px] font-bold text-white">{milestone}</span>
+        </button>
         {showTooltip && (
-          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-            {tooltipText}
+          <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
+            <div className="font-semibold">{milestone}</div>
+            <div>Signoff: {week.status}</div>
+            <div>{weekLabel}</div>
           </div>
         )}
       </div>
@@ -67,10 +301,20 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; ty
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      <div className={`w-3 h-3 ${colorClass} cursor-pointer hover:opacity-80 transition-opacity`} style={{ transform: "rotate(45deg)" }} />
+      <button
+        onClick={onClick}
+        className={`w-4 h-4 transition-transform hover:scale-125 cursor-pointer ${bgColor} flex items-center justify-center relative`}
+        style={{ transform: "rotate(45deg)" }}
+        aria-label={ariaLabel}
+        title={tooltipText}
+      >
+        <span className="absolute text-[7px] font-bold text-white" style={{ transform: "rotate(-45deg)" }}>{milestone}</span>
+      </button>
       {showTooltip && (
-        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700">
-          {tooltipText}
+        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-10 border border-gray-700 pointer-events-none">
+          <div className="font-semibold">{milestone}</div>
+          <div>Invoice: {week.status}</div>
+          <div>{weekLabel}</div>
         </div>
       )}
     </div>
@@ -78,62 +322,92 @@ const WeekBlockCell = ({ week, type, allWeeks, milestone }: { week: WeekData; ty
 };
 
 export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealthTrackerProps) => {
+  const [modalState, setModalState] = useState<ModalState | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="flex items-center justify-center p-8 rounded-lg border border-gray-200 bg-white">
         <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+        <span className="ml-2 text-sm text-gray-600">Loading milestone health...</span>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-600">
-        Failed to load milestone health: {error.message}
+      <div className="p-4 bg-red-50 border border-red-300 rounded-lg text-sm text-red-700">
+        <strong>Error:</strong> Failed to load milestone health. {error?.message}
       </div>
     );
   }
 
   if (!data) {
-    return null;
+    return (
+      <div className="p-4 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-700">
+        No milestone health data available.
+      </div>
+    );
   }
 
-  // Collect all unique milestones across all phases
-  const allMilestones = Array.from(
-    new Set([
-      ...data.practice.map((p) => p.milestone_code),
-      ...data.signoff.map((s) => s.milestone_code),
-      ...data.invoice.map((i) => i.milestone_code),
-    ])
-  ).filter(Boolean);
+  const handleModalOpen = (
+    type: "practice" | "signoff" | "invoice",
+    milestone: MilestoneHealthPhase,
+    weekNumber?: number,
+    weekLabel?: string,
+    isEmpty = false
+  ) => {
+    setModalState({
+      isOpen: true,
+      type,
+      milestone,
+      milestoneId: milestone.milestone_code || "",
+      weekNumber,
+      weekLabel,
+      isEmpty,
+    });
+  };
 
-  // Create a mapping of milestone codes to phase data
-  const milestoneMap: Record<string, { practice?: typeof data.practice[0]; signoff?: typeof data.signoff[0]; invoice?: typeof data.invoice[0] }> = {};
-  allMilestones.forEach((code) => {
-    milestoneMap[code] = {
-      practice: data.practice.find((p) => p.milestone_code === code),
-      signoff: data.signoff.find((s) => s.milestone_code === code),
-      invoice: data.invoice.find((i) => i.milestone_code === code),
-    };
-  });
+  const handleModalClose = () => {
+    setModalState(null);
+  };
 
-  const phases: Array<{ type: "practice" | "signoff" | "invoice"; label: string }> = [
-    { type: "practice", label: "Practice" },
-    { type: "signoff", label: "Client Signoff" },
-    { type: "invoice", label: "Invoice" },
-  ];
+  const handleSave = async (updates: Record<string, unknown>) => {
+    if (!modalState) return;
+    setIsSaving(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const response = await fetch(`${baseUrl}/api/milestones/${modalState.milestoneId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
 
-  // Group weeks by month based on actual start date (not label)
+      if (!response.ok) {
+        throw new Error("Failed to update milestone");
+      }
+
+      // Close modal and optionally refresh data
+      handleModalClose();
+      // Note: You may want to refetch the milestone health data here
+    } catch (err) {
+      console.error("Update failed:", err);
+      alert(`Error updating milestone: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Group weeks by month based on actual start date
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string }> = {};
   let currentMonthKey = "";
 
   Object.entries(data.all_weeks).forEach(([idx, week]) => {
-    // Parse the actual start date to determine the month
     const startDate = new Date(week.start);
     const year = startDate.getFullYear();
     const month = String(startDate.getMonth() + 1).padStart(2, "0");
-    const monthKey = `${year}-${month}`; // e.g., "2025-01"
-    const monthLabel = `${startDate.toLocaleString("en-US", { month: "short" })} ${year}`; // e.g., "Jan 2025"
+    const monthKey = `${year}-${month}`;
+    const monthLabel = `${startDate.toLocaleString("en-US", { month: "short" })} ${year}`;
     const weekIdx = parseInt(idx);
 
     if (monthKey !== currentMonthKey) {
@@ -146,13 +420,19 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
     }
   });
 
+  const phases: Array<{ type: "practice" | "signoff" | "invoice"; label: string }> = [
+    { type: "practice", label: "PRACTICE" },
+    { type: "signoff", label: "CLIENT SIGNOFF" },
+    { type: "invoice", label: "INVOICE HEALTH" },
+  ];
+
   return (
-    <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 overflow-hidden">
+    <div className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="border-b border-gray-300 px-6 py-4">
-        <h3 className="text-lg font-bold text-gray-800">{data.project_name} - Milestone Health</h3>
+      <div className="border-b border-gray-200 px-6 py-4 bg-gradient-to-r from-gray-50 to-white">
+        <h2 className="text-xl font-bold text-gray-900">{data.project_name} - Milestone Health</h2>
         <p className="text-xs text-gray-500 mt-1">
-          {data.weeks_range.start_week} — {data.weeks_range.end_week} ({data.weeks_range.total_weeks} weeks)
+          Last Updated: {new Date().toLocaleDateString()} | {data.weeks_range.start_week} — {data.weeks_range.end_week} ({data.weeks_range.total_weeks} weeks)
         </p>
       </div>
 
@@ -160,42 +440,36 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
       <div className="overflow-x-auto">
         <div className="min-w-max">
           {/* Month Headers */}
-          <div className="flex border-b border-gray-300">
-            {/* Empty cell for phase labels column */}
-            <div className="w-40 flex-shrink-0 border-r border-gray-300" />
-
-            {/* Month headers */}
+          <div className="flex border-b border-gray-200 bg-gray-50">
+            <div className="w-48 flex-shrink-0 border-r border-gray-200" />
             {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx, label }]) => {
               const weekCount = endIdx - startIdx + 1;
               return (
                 <div
                   key={monthKey}
-                  className="flex-shrink-0 border-r border-gray-300 py-2 px-1 text-center"
-                  style={{ width: `${weekCount * 32}px` }}
+                  className="flex-shrink-0 border-r border-gray-200 py-2 px-2 text-center font-semibold text-xs text-gray-700"
+                  style={{ width: `${weekCount * 40}px` }}
                 >
-                  <span className="text-xs font-semibold text-gray-600">{label}</span>
+                  {label}
                 </div>
               );
             })}
           </div>
 
           {/* Week Number Headers */}
-          <div className="flex border-b border-gray-300">
-            {/* Empty cell for phase labels column */}
-            <div className="w-40 flex-shrink-0 border-r border-gray-300" />
-
-            {/* Week numbers */}
+          <div className="flex border-b border-gray-200 bg-gray-50">
+            <div className="w-48 flex-shrink-0 border-r border-gray-200" />
             {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx }]) => {
               const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
               return (
-                <div key={`${monthKey}-weeks`} className="flex border-r border-gray-300">
-                  {weeks.map((weekIdx, i) => (
+                <div key={`${monthKey}-weeks`} className="flex border-r border-gray-200">
+                  {weeks.map((_, i) => (
                     <div
-                      key={weekIdx}
-                      className={`flex-shrink-0 flex items-center justify-center text-center py-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
-                      style={{ width: "32px" }}
+                      key={`${monthKey}-week-${i}`}
+                      className={`flex-shrink-0 flex items-center justify-center text-center py-1 text-xs text-gray-500 font-medium ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
+                      style={{ width: "40px" }}
                     >
-                      <span className="text-[10px] text-gray-500 font-medium">W{i + 1}</span>
+                      {i + 1}
                     </div>
                   ))}
                 </div>
@@ -207,41 +481,90 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
           {phases.map((phase, phaseIdx) => (
             <div
               key={phase.type}
-              className={`flex ${phaseIdx < phases.length - 1 ? "border-b border-gray-300" : ""}`}
+              className={`flex ${phaseIdx < phases.length - 1 ? "border-b border-gray-200" : ""}`}
             >
               {/* Phase Label Column */}
-              <div className="w-40 flex-shrink-0 border-r border-gray-300 flex items-center px-4 py-4 bg-white/50">
-                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">{phase.label}</span>
+              <div className="w-48 flex-shrink-0 border-r border-gray-200 flex items-center px-4 py-4 bg-gray-50 border-b border-gray-200">
+                <span className="text-xs font-bold text-gray-700 uppercase">{phase.label}</span>
               </div>
 
               {/* Milestone Data Cells */}
               {Object.entries(monthGroups).map(([monthKey, { startIdx, endIdx }]) => {
                 const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
                 return (
-                  <div key={`${phase.type}-${monthKey}`} className="flex border-r border-gray-300">
+                  <div key={`${phase.type}-${monthKey}`} className="flex border-r border-gray-200">
                     {weeks.map((weekIdx, i) => {
-                      let weekData: WeekData | undefined;
-                      let milestoneCode: string | undefined;
+                      const phaseData = data[phase.type];
+                      const weekLabel = data.all_weeks[String(weekIdx)]?.label || `Week ${weekIdx}`;
+                      let cellContent = null;
 
-                      // Find milestone that has data for this specific week index
-                      allMilestones.forEach((milestone) => {
-                        const phaseData = milestoneMap[milestone]?.[phase.type];
-                        if (phaseData?.weeks) {
-                          const week = phaseData.weeks.find((w) => w.week_number === weekIdx);
-                          if (week && !weekData) {
-                            weekData = week;
-                            milestoneCode = milestone;
-                          }
+                      if (phase.type === "practice") {
+                        // For practice, show all milestones that have data for this week
+                        const milestonesForWeek = phaseData.filter((m) => m.weeks.some((w) => w.week_number === weekIdx));
+                        // Also identify milestones WITHOUT data for this week (empty cells)
+                        const milestonesWithoutData = phaseData.filter((m) => !m.weeks.some((w) => w.week_number === weekIdx));
+
+                        cellContent = (
+                          <div className="flex flex-col gap-1">
+                            {/* Show filled cells for milestones with data */}
+                            {milestonesForWeek.map((milestone) => {
+                              const week = milestone.weeks.find((w) => w.week_number === weekIdx);
+                              if (!week) return null;
+                              return (
+                                <WeekBlockCell
+                                  key={`${milestone.milestone_code}-${weekIdx}`}
+                                  week={week}
+                                  type="practice"
+                                  allWeeks={data.all_weeks}
+                                  milestone={milestone.milestone_code || ""}
+                                  onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, false)}
+                                />
+                              );
+                            })}
+                            {/* Show empty cells for milestones WITHOUT data - clickable to add status for each */}
+                            {milestonesWithoutData.map((milestone) => (
+                              <EmptyCell
+                                key={`${milestone.milestone_code}-empty-${weekIdx}`}
+                                weekNumber={weekIdx}
+                                allWeeks={data.all_weeks}
+                                milestoneCode={milestone.milestone_code || ""}
+                                onClick={() => handleModalOpen("practice", milestone, weekIdx, weekLabel, true)}
+                              />
+                            ))}
+                          </div>
+                        );
+                      } else {
+                        // For signoff and invoice, show all milestones that have data for this week
+                        const milestonesForWeek = phaseData.filter((m) => m.weeks.some((w) => w.week_number === weekIdx));
+                        if (milestonesForWeek.length > 0) {
+                          cellContent = (
+                            <div className="flex flex-col gap-1">
+                              {milestonesForWeek.map((milestone) => {
+                                const week = milestone.weeks.find((w) => w.week_number === weekIdx);
+                                if (!week) return null;
+                                return (
+                                  <WeekBlockCell
+                                    key={`${milestone.milestone_code}-${weekIdx}`}
+                                    week={week}
+                                    type={phase.type}
+                                    allWeeks={data.all_weeks}
+                                    milestone={milestone.milestone_code || ""}
+                                    onClick={() => handleModalOpen(phase.type, milestone, weekIdx, weekLabel, false)}
+                                  />
+                                );
+                              })}
+                            </div>
+                          );
                         }
-                      });
+                      }
 
                       return (
                         <div
                           key={weekIdx}
-                          className={`flex-shrink-0 flex items-center justify-center py-4 px-1 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
-                          style={{ width: "32px" }}
+                          className={`flex-shrink-0 flex items-center justify-center py-3 px-2 ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
+                          style={{ width: "40px", minHeight: "50px" }}
                         >
-                          {weekData && <WeekBlockCell week={weekData} type={phase.type} allWeeks={data.all_weeks} milestone={milestoneCode} />}
+                          {cellContent}
                         </div>
                       );
                     })}
@@ -254,31 +577,44 @@ export const MilestoneHealthTracker = ({ data, loading, error }: MilestoneHealth
       </div>
 
       {/* Footer - Legend */}
-      <div className="border-t border-gray-300 px-6 py-4 bg-white/30">
-        <p className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wide">Status</p>
-        <div className="flex flex-wrap gap-4 text-xs">
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-blue-500" />
+      <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+        <p className="text-xs font-bold text-gray-700 mb-3 uppercase">Status Legend</p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#22c55e" }} />
+            <span className="text-gray-600">On Track</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#3b82f6" }} />
             <span className="text-gray-600">Completed</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-amber-500" />
-            <span className="text-gray-600">Pending</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-orange-500" />
-            <span className="text-gray-600">In Progress</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-red-500" />
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#f97316" }} />
             <span className="text-gray-600">At Risk</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm bg-gray-300" />
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#ef4444" }} />
+            <span className="text-gray-600">Blocked</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#d1d5db" }} />
             <span className="text-gray-600">No Data</span>
           </div>
         </div>
       </div>
+
+      {/* Status Editor Modal */}
+      {modalState && (
+        <StatusEditorModal
+          isOpen={modalState.isOpen}
+          milestone={modalState.milestone}
+          type={modalState.type}
+          weekLabel={modalState.weekLabel}
+          isEmpty={modalState.isEmpty}
+          onClose={handleModalClose}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 };
