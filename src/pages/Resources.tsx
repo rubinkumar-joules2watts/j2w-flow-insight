@@ -94,7 +94,7 @@ const Resources = () => {
     const { data, error } = await api.from("team_members").insert({
       name: newMember.name, role: newMember.role, reports_to: newMember.reportsTo || null,
       member_type: newMember.memberType, resource_type: newMember.resourceType || "Internal",
-      vendor: newMember.resourceType === "Consultant - External" ? newMember.vendor : null,
+      vendor: newMember.resourceType === "External" ? newMember.vendor : null,
       engagement_pct: newMember.engagementPct,
       initials, color_hex: color,
     }).select().single();
@@ -243,14 +243,14 @@ const Resources = () => {
                 {/* Card Header: Initials + Name */}
                 <div className="flex items-center gap-3 p-4 bg-gray-100/50 border-b border-gray-200">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md border-2 border-white" style={{
-                    backgroundColor: primaryMember.resource_type === 'Consultant - External' ? '#6366F1' : primaryMember.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E'
+                    backgroundColor: primaryMember.resource_type === 'External' ? '#6366F1' : primaryMember.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E'
                   }}>
                     {primaryMember.initials}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-gray-900 truncate leading-tight">{name}</p>
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'Consultant - External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
-                      primaryMember.resource_type === 'Consultant - Internal' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
+                      primaryMember.resource_type === 'Consultant' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
                         "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
                       }`}>
                       {primaryMember.resource_type || "Internal"}
@@ -465,10 +465,10 @@ const Resources = () => {
               label="Resource Type"
               value={newMember.resourceType}
               onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
-              options={["Internal", "Consultant - Internal", "Consultant - External"]}
+              options={["Internal", "Consultant", "External"]}
               required
             />
-            {newMember.resourceType === "Consultant - External" && (
+            {newMember.resourceType === "External" && (
               <FormInput
                 label="Vendor Name"
                 value={newMember.vendor}
@@ -562,7 +562,7 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
       reports_to: form.reportsTo || null,
       member_type: form.memberType,
       resource_type: form.resourceType || "Internal",
-      vendor: form.resourceType === "Consultant - External" ? form.vendor : null,
+      vendor: form.resourceType === "External" ? form.vendor : null,
       engagement_pct: form.engagementPct
     };
 
@@ -663,11 +663,11 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
           label="Resource Type"
           value={form.resourceType}
           onChange={(v) => setForm({ ...form, resourceType: v })}
-          options={["Internal", "Consultant - Internal", "Consultant - External"]}
+          options={["Internal", "Consultant", "External"]}
           disabled={isLoading}
           required
         />
-        {form.resourceType === "Consultant - External" && (
+        {form.resourceType === "External" && (
           <FormInput
             label="Vendor Name"
             value={form.vendor}

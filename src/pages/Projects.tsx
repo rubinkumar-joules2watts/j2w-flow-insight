@@ -727,9 +727,8 @@ const Projects = () => {
           <div
             className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner"
             style={{
-              backgroundColor: member.resource_type === 'Consultant - External' ? '#6366F1' : member.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E',
-              color: "#fff",
-              boxShadow: `0 0 0 2px ${member.resource_type === 'Consultant - External' ? '#6366F1' : member.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E'}44`
+              backgroundColor: member.resource_type === 'External' ? '#6366F1' : member.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E',
+              boxShadow: `0 0 0 2px ${member.resource_type === 'External' ? '#6366F1' : member.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E'}44`
             }}
           >
             {member.initials || deriveInitials(member.name)}
@@ -741,9 +740,9 @@ const Projects = () => {
             <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
               {member.role || "No role"}
             </p>
-            <span className={`mt-1 inline-block text-[7px] px-1.5 py-0.5 rounded-sm border font-extrabold uppercase tracking-widest ${member.resource_type === 'Consultant - External'
+            <span className={`mt-1 inline-block text-[7px] px-1.5 py-0.5 rounded-sm border font-extrabold uppercase tracking-widest ${member.resource_type === 'External'
               ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20"
-              : member.resource_type === 'Consultant - Internal'
+              : member.resource_type === 'Consultant'
                 ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
                 : "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
               }`}>
@@ -1495,15 +1494,15 @@ const Projects = () => {
               <div className="flex flex-wrap gap-2">
                 {assignedMembers.map((m) => (
                   <div key={m.id} className="flex items-center gap-2 rounded-lg bg-gray-100/50 border border-gray-300/50 px-3 py-2 hover:border-gray-400 transition-all">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'Consultant - External' ? '#6366F1' : m.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'External' ? '#6366F1' : m.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
                       {m.initials}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-xs font-bold text-gray-900">{m.name}</p>
-                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'Consultant - External'
+                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'External'
                           ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20"
-                          : m.resource_type === 'Consultant - Internal'
+                          : m.resource_type === 'Consultant'
                             ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
                             : "bg-teal-400/10 text-teal-500 border-teal-400/20"
                           }`}>
@@ -1904,10 +1903,10 @@ const Projects = () => {
               label="Resource Type"
               value={newHierarchyMember.resourceType}
               onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, resourceType: v })}
-              options={["Internal", "Consultant - Internal", "Consultant - External"]}
+              options={["Internal", "Consultant", "External"]}
               required
             />
-            {newHierarchyMember.resourceType === "Consultant - External" && (
+            {newHierarchyMember.resourceType === "External" && (
               <FormInput
                 label="Vendor Name"
                 value={newHierarchyMember.vendor}
