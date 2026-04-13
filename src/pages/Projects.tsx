@@ -120,20 +120,6 @@ const Projects = () => {
   const { data: allUpdates = [] } = useProjectUpdates();
   const { data: projDocs = [] } = useProjectDocuments();
 
-  if (membersLoading) {
-    return (
-      <AppLayout>
-        <Topbar title="Project Insights" />
-        <div className="flex h-[80vh] items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
-            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Initializing Dashboard...</p>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
-
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
   const client = clients?.find((c) => c.id === project?.client_id);
@@ -859,6 +845,20 @@ const Projects = () => {
   };
 
   const doneMilestones = projMilestones.filter((m) => m.completion_pct === 100).length;
+
+  if (membersLoading) {
+    return (
+      <AppLayout>
+        <Topbar title="Project Insights" />
+        <div className="flex h-[80vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Initializing Dashboard...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
