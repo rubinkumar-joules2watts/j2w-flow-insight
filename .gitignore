@@ -31,4 +31,4 @@ dist-ssr
 # Markdown files (except README)
 *.md
 !README.md
-backend/
+
