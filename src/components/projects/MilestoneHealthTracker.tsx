@@ -464,7 +464,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       // Refresh milestone health data immediately from API 1
       if (data?.project_id) {
         try {
-          const healthRes = await fetch(`${baseUrl}/api/projects/${data.project_id}/milestone-health`);
+          const healthRes = await fetch(`${baseUrl}api/projects/${data.project_id}/milestone-health`);
           if (healthRes.ok) {
             const healthData = await healthRes.json();
             // Update the cache with fresh data
