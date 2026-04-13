@@ -437,14 +437,14 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
           date: modalState.weekDate || (updates.signedoff_date || updates.invoice_raised_date || new Date().toISOString().split("T")[0])
         };
 
-        response = await fetch(`${baseUrl}/api/milestones/${modalState.milestoneId}/health/${modalState.type}/week/${modalState.weekNumber}`, {
+        response = await fetch(`${baseUrl}api/milestones/${modalState.milestoneId}/health/${modalState.type}/week/${modalState.weekNumber}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(weekPayload),
         });
       } else {
         // API 2: Update milestone-level status (regenerates all weeks)
-        response = await fetch(`${baseUrl}/api/milestones/${modalState.milestoneId}/health/${modalState.type}`, {
+        response = await fetch(`${baseUrl}api/milestones/${modalState.milestoneId}/health/${modalState.type}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
