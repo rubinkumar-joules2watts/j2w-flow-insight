@@ -167,7 +167,7 @@ export const useMilestoneHealth = (projectId: string) =>
     queryKey: ["milestone_health", projectId],
     queryFn: async () => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}/api/projects/${projectId}/milestone-health`);
+      const res = await fetch(`${baseUrl}api/projects/${projectId}/milestone-health`);
       if (!res.ok) throw new Error("Failed to fetch milestone health");
       return (await res.json()) as MilestoneHealthData;
     },
@@ -187,7 +187,7 @@ export const useEngagement = (memberId: string, projectId: string) =>
     queryKey: ["engagement", memberId, projectId],
     queryFn: async () => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}/api/team_members_engagement/member/${memberId}/project/${projectId}`);
+      const res = await fetch(`${baseUrl}api/team_members_engagement/member/${memberId}/project/${projectId}`);
       if (!res.ok) throw new Error("Failed to fetch engagement");
       const data = await res.json();
       return (data[0] || { engagement_level: "0" }) as Engagement;
