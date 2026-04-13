@@ -4,12 +4,12 @@ import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
 import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth, useEngagement, useUpdateEngagement } from "@/hooks/useData";
 import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTracker";
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon, Upload } from "lucide-react";
+import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon, Upload, Activity, CheckCircle, Clock, Users } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
 
@@ -39,6 +39,73 @@ const deriveInitials = (name: string) =>
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() || "")
     .join("") || "TM";
+
+const AllocationCell = ({ memberId, projectId }: { memberId: string; projectId: string }) => {
+  const { data: engagement, isLoading } = useEngagement(memberId, projectId);
+  const { mutateAsync: updateEngagement } = useUpdateEngagement();
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(engagement?.engagement_level || "0");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (engagement) setValue(engagement.engagement_level);
+  }, [engagement]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await updateEngagement({
+        team_member_id: memberId,
+        project_id: projectId,
+        engagement_level: value
+      });
+      setIsEditing(false);
+      toast.success("Engagement updated");
+    } catch (e) {
+      toast.error("Failed to update engagement");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) return <div className="animate-pulse h-4 w-8 bg-gray-200 rounded" />;
+
+  return (
+    <div className="flex items-center gap-1">
+      {isEditing ? (
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            className="w-12 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-blue-500"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSave()}
+            autoFocus
+          />
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="text-emerald-500 hover:text-emerald-600 transition-colors"
+          >
+            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+          </button>
+          <button onClick={() => setIsEditing(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={12} />
+          </button>
+        </div>
+      ) : (
+        <div
+          className="cursor-pointer rounded border border-transparent px-1 py-0.5 text-[10px] font-bold text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center gap-0.5"
+          onClick={() => setIsEditing(true)}
+          title="Click to edit allocation %"
+        >
+          <Clock size={10} className="text-gray-400" />
+          {engagement?.engagement_level || "0"}%
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Projects = () => {
   const [searchParams] = useSearchParams();
@@ -120,6 +187,7 @@ const Projects = () => {
     role: "Developer",
     reportsTo: "",
     resourceType: "Internal",
+    vendor: "",
   });
   const saveTimerRef = useRef<number>();
 
@@ -488,6 +556,7 @@ const Projects = () => {
       role: newHierarchyMember.role.trim() || "Developer",
       reports_to: newHierarchyMember.reportsTo || null,
       resource_type: newHierarchyMember.resourceType || "Internal",
+      vendor: newHierarchyMember.resourceType === "Consultant - External" ? newHierarchyMember.vendor : null,
       engagement_pct: 100,
       color_hex: "#0EA5A6",
       is_active: true,
@@ -518,7 +587,7 @@ const Projects = () => {
     qc.invalidateQueries({ queryKey: ["audit_log"] });
 
     setShowAddHierarchyMember(false);
-    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", resourceType: "Internal" });
+    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", resourceType: "Internal", vendor: "" });
     toast.success(`✓ Added ${payload.name} to hierarchy · ${new Date().toLocaleTimeString()}`);
   };
 
@@ -658,25 +727,28 @@ const Projects = () => {
           <div
             className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold shadow-inner"
             style={{
-              backgroundColor: member.resource_type === 'External' ? '#F59E0B' : '#22C55E',
+              backgroundColor: member.resource_type === 'Consultant - External' ? '#6366F1' : member.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E',
               color: "#fff",
-              boxShadow: `0 0 0 2px ${member.resource_type === 'External' ? '#F59E0B' : '#22C55E'}44`
+              boxShadow: `0 0 0 2px ${member.resource_type === 'Consultant - External' ? '#6366F1' : member.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E'}44`
             }}
           >
             {member.initials || deriveInitials(member.name)}
           </div>
           <div className="text-center min-w-0">
-            <p className={`text-xs font-bold truncate ${level === 0 ? "text-primary" : "text-foreground"}`}>
+            <p className={`text-xs font-bold ${level === 0 ? "text-primary" : "text-foreground"}`}>
               {member.name}
             </p>
             <p className="text-[10px] text-muted-foreground font-medium mt-0.5">
               {member.role || "No role"}
             </p>
-            {member.resource_type === "External" ? (
-              <span className="mt-1 inline-block text-[7px] bg-amber-400/10 text-amber-500 px-1.5 py-0.5 rounded-sm border border-amber-400/20 font-extrabold uppercase tracking-widest">EXTERNAL</span>
-            ) : (
-              <span className="mt-1 inline-block text-[7px] bg-emerald-400/10 text-emerald-500 px-1.5 py-0.5 rounded-sm border border-emerald-400/20 font-extrabold uppercase tracking-widest">INTERNAL</span>
-            )}
+            <span className={`mt-1 inline-block text-[7px] px-1.5 py-0.5 rounded-sm border font-extrabold uppercase tracking-widest ${member.resource_type === 'Consultant - External'
+              ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20"
+              : member.resource_type === 'Consultant - Internal'
+                ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
+                : "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
+              }`}>
+              {member.resource_type || "Internal"}
+            </span>
           </div>
           {children.length > 0 && (
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[8px] text-primary-foreground border-2 border-card font-extrabold shadow-sm">
@@ -777,9 +849,9 @@ const Projects = () => {
   return (
     <AppLayout>
       <Topbar title="Projects" />
-      <div className="p-6 space-y-5 animate-fade-in">
+      <div className="p-4 space-y-3 animate-fade-in">
         {/* Filters */}
-        <div className="grid grid-cols-3 gap-4 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4">
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-2.5">
           <FilterSelect
             value={projectFilter}
             onChange={(value) => {
@@ -835,12 +907,15 @@ const Projects = () => {
                 <button
                   key={p.id}
                   onClick={() => navigate(`/projects?id=${p.id}`)}
-                  className={`shrink-0 rounded-full border px-4 py-2.5 text-sm font-semibold transition-colors ${p.id === selectedId
-                    ? "border-primary bg-primary/15 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                  className={`shrink-0 flex items-center gap-2 rounded-full border px-4 py-2 transition-all ${p.id === selectedId
+                    ? "border-primary bg-primary/10 text-primary shadow-sm"
+                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-white"
                     }`}
                 >
-                  {cl?.name} · {p.name}
+                  <span className="text-sm font-bold tracking-tight">{cl?.name} · {p.name}</span>
+                  <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${p.id === selectedId ? "bg-primary text-white shadow-sm" : "bg-gray-200 text-gray-600"}`}>
+                    {milestones?.filter(m => m.project_id === p.id).length || 0}
+                  </span>
                 </button>
               );
             })}
@@ -885,25 +960,45 @@ const Projects = () => {
         {project && (
           <>
             {/* Project Header - Dashboard Style */}
-            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-6 space-y-5">
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-1.5">
+                    <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                       <span className="text-gray-600 font-semibold">{client?.name}</span>
                       <span className="text-gray-400 font-light">·</span>
                       <InlineEdit
                         value={project.name}
                         onSave={(v) => updateProject("name", v, project.name)}
                         savedKey={savedField === "proj-name"}
-                        className="hover:text-blue-400 transition-colors cursor-text"
+                        className="hover:text-blue-500 transition-colors cursor-text"
+                        noTruncate={true}
                       />
+                      <div className="ml-4 flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 bg-blue-50/50 border border-blue-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Total Milestones">
+                          <Activity size={12} className="text-blue-500" />
+                          <span className="text-[10px] font-black text-blue-700">{projMilestones.length} <span className="font-bold text-blue-400 ml-0.5 uppercase tracking-tighter">Milestones</span></span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-emerald-50/50 border border-emerald-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Completed Milestones">
+                          <CheckCircle size={12} className="text-emerald-500" />
+                          <span className="text-[10px] font-black text-emerald-700">{doneMilestones} <span className="font-bold text-emerald-400 ml-0.5 uppercase tracking-tighter">Done</span></span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-amber-50/50 border border-amber-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Remaining Milestones">
+                          <Clock size={12} className="text-amber-500" />
+                          <span className="text-[10px] font-black text-amber-700">{projMilestones.length - doneMilestones} <span className="font-bold text-amber-400 ml-0.5 uppercase tracking-tighter">Left</span></span>
+                        </div>
+                        <div className="flex items-center gap-1.5 bg-violet-50/50 border border-violet-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Resources">
+                          <Users size={12} className="text-violet-500" />
+                          <span className="text-[10px] font-black text-violet-700">{assignedMembers.length} <span className="font-bold text-violet-400 ml-0.5 uppercase tracking-tighter">Team</span></span>
+                        </div>
+                      </div>
                     </h2>
-                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1.5 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Project">
+
+                    <button onClick={() => setConfirmDeleteProject(project.id)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all ml-auto" title="Delete Project">
                       <Trash2 size={20} />
                     </button>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-1.5 flex flex-wrap gap-2">
                     <EditableSelect value={project.service_type || ""} options={["Outcomes", "Governance"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
                     <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
                     <div className="relative inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border transition-all" style={{
@@ -933,46 +1028,33 @@ const Projects = () => {
                       {savedField === "proj-status" && <span className="absolute -top-4 left-0 text-[10px] text-emerald-500">Saved ✓</span>}
                     </div>
                   </div>
-                  <div className="mt-5 flex flex-wrap gap-8 text-base text-gray-800 font-bold">
+                  <div className="mt-2.5 flex flex-wrap gap-x-8 gap-y-1 text-sm text-gray-800 font-bold">
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600">Manager:</span>
-                      <InlineEdit value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} />
+                      <span className="text-gray-600 text-[11px] uppercase tracking-wider font-semibold">Manager:</span>
+                      <InlineEdit noTruncate={true} value={project.delivery_manager || ""} onSave={(v) => updateProject("delivery_manager", v, project.delivery_manager)} savedKey={savedField === "proj-delivery_manager"} />
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600">SPOC:</span>
-                      <InlineEdit value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} />
+                      <span className="text-gray-600 text-[11px] uppercase tracking-wider font-semibold">SPOC:</span>
+                      <InlineEdit noTruncate={true} value={project.client_spoc || ""} onSave={(v) => updateProject("client_spoc", v, project.client_spoc)} savedKey={savedField === "proj-client_spoc"} />
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-600">Handled by:</span>
-                      <InlineEdit value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} />
+                      <span className="text-gray-600 text-[11px] uppercase tracking-wider font-semibold">Handled by:</span>
+                      <InlineEdit noTruncate={true} value={project.handled_by || ""} onSave={(v) => updateProject("handled_by", v, project.handled_by)} savedKey={savedField === "proj-handled_by"} />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* KPI Metrics - Dashboard Style */}
-              <div className="grid grid-cols-4 gap-3 pt-2">
-                {[
-                  { label: "Total Milestones", value: projMilestones.length, color: "text-blue-400", bgColor: "bg-blue-400/10 border-blue-400/30" },
-                  { label: "Completed", value: doneMilestones, color: "text-emerald-400", bgColor: "bg-emerald-400/10 border-emerald-400/30" },
-                  { label: "Remaining", value: projMilestones.length - doneMilestones, color: "text-amber-400", bgColor: "bg-amber-400/10 border-amber-400/30" },
-                  { label: "Resources", value: assignedMembers.length, color: "text-violet-400", bgColor: "bg-violet-400/10 border-violet-400/30" },
-                ].map((s) => (
-                  <div key={s.label} className={`rounded-lg border ${s.bgColor} p-4 flex flex-col gap-2`}>
-                    <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
-                    <p className="text-xs text-gray-500 font-medium">{s.label}</p>
-                  </div>
-                ))}
-              </div>
             </div>
 
+
             {/* Timeline Typebar - Dashboard Style */}
-            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-5 shadow-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
-                  <MessageSquare size={20} />
+            <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-3 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
+                  <MessageSquare size={16} />
                 </div>
-                <div className="flex-1 flex flex-col gap-3">
+                <div className="flex-1 flex flex-col gap-2">
                   <div className="flex items-center gap-2">
                     <input
                       type="date"
@@ -1076,7 +1158,7 @@ const Projects = () => {
 
               {projUpdates.length > 0 && (
                 <div className="relative">
-                  <div className="flex items-start gap-2 overflow-x-auto pb-4 no-scrollbar">
+                  <div className="flex items-start gap-2 overflow-x-auto pb-2 no-scrollbar">
                     <button
                       onClick={() => setIsTimelineCollapsed(!isTimelineCollapsed)}
                       className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-bold text-muted-foreground uppercase tracking-widest vertical-text hover:bg-secondary/50 transition-all group"
@@ -1188,6 +1270,7 @@ const Projects = () => {
                 data={milestoneHealth}
                 loading={milestoneHealthLoading}
                 error={milestoneHealthError}
+                projectMilestones={projMilestones}
                 onDataRefresh={async (projectId) => {
                   await qc.invalidateQueries({ queryKey: ["milestone_health", projectId] });
                 }}
@@ -1300,12 +1383,16 @@ const Projects = () => {
                               onChange={(e) => updateMilestoneViaAPI(m.milestone_code || "", "client_signoff_status", e.target.value)}
                               className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
                               style={{
-                                backgroundColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
-                                borderColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
-                                color: m.client_signoff_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                                backgroundColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.2)" :
+                                  m.client_signoff_status === "Partial" ? "rgb(99 102 241 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                                borderColor: m.client_signoff_status === "Done" ? "rgb(34 197 94 / 0.5)" :
+                                  m.client_signoff_status === "Partial" ? "rgb(99 102 241 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                                color: m.client_signoff_status === "Done" ? "rgb(22 163 74)" :
+                                  m.client_signoff_status === "Partial" ? "rgb(67 56 202)" : "rgb(234 88 12)"
                               }}
                             >
                               <option value="Done">Done</option>
+                              <option value="Partial">Partial</option>
                               <option value="Pending">Pending</option>
                             </select>
                             {m.client_signoff_status === "Done" && (
@@ -1324,12 +1411,16 @@ const Projects = () => {
                               onChange={(e) => updateMilestoneViaAPI(m.milestone_code || "", "invoice_status", e.target.value)}
                               className="appearance-none rounded-md border px-2 py-1 text-xs font-semibold outline-none focus:ring-1"
                               style={{
-                                backgroundColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.2)" : "rgb(253 224 71 / 0.2)",
-                                borderColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.5)" : "rgb(251 146 60 / 0.5)",
-                                color: m.invoice_status === "Done" ? "rgb(22 163 74)" : "rgb(234 88 12)"
+                                backgroundColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.2)" :
+                                  m.invoice_status === "Partial" ? "rgb(99 102 241 / 0.2)" : "rgb(253 224 71 / 0.2)",
+                                borderColor: m.invoice_status === "Done" ? "rgb(34 197 94 / 0.5)" :
+                                  m.invoice_status === "Partial" ? "rgb(99 102 241 / 0.5)" : "rgb(251 146 60 / 0.5)",
+                                color: m.invoice_status === "Done" ? "rgb(22 163 74)" :
+                                  m.invoice_status === "Partial" ? "rgb(67 56 202)" : "rgb(234 88 12)"
                               }}
                             >
                               <option value="Done">Done</option>
+                              <option value="Partial">Partial</option>
                               <option value="Pending">Pending</option>
                             </select>
                             {m.invoice_status === "Done" && (
@@ -1390,14 +1481,19 @@ const Projects = () => {
               <div className="flex flex-wrap gap-2">
                 {assignedMembers.map((m) => (
                   <div key={m.id} className="flex items-center gap-2 rounded-lg bg-gray-100/50 border border-gray-300/50 px-3 py-2 hover:border-gray-400 transition-all">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'External' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'Consultant - External' ? '#6366F1' : m.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
                       {m.initials}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-xs font-bold text-gray-900">{m.name}</p>
-                        <span className={`text-[7px] font-extrabold px-1 rounded-sm border ${m.resource_type === 'External' ? 'bg-amber-400/10 text-amber-500 border-amber-400/20' : 'bg-emerald-400/10 text-emerald-500 border-emerald-400/20'}`}>
-                          {m.resource_type === 'External' ? 'EXTERNAL' : 'INTERNAL'}
+                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'Consultant - External'
+                          ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20"
+                          : m.resource_type === 'Consultant - Internal'
+                            ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
+                            : "bg-teal-400/10 text-teal-500 border-teal-400/20"
+                          }`}>
+                          {m.resource_type || "Internal"}
                         </span>
                       </div>
                       <p className="text-[10px] text-gray-500">{m.role}</p>
@@ -1437,10 +1533,16 @@ const Projects = () => {
                       <span className="text-[10px] bg-gray-100/50 text-gray-500 border border-gray-300 px-2 py-0.5 rounded-full font-bold">Config</span>
                     </div>
                     <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                      <div className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] gap-2 px-3 py-1 mb-1">
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Resource</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Role</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Reports To</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-400">Alloc %</span>
+                      </div>
                       {assignedMembers.map((m) => {
                         const reportsToId = resolveReportsToId(m.reports_to) || "";
                         return (
-                          <div key={m.id} className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2 rounded-md border border-gray-300/50 bg-gray-100/30 px-3 py-2 hover:bg-gray-100/50 transition-colors">
+                          <div key={m.id} className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] items-center gap-2 rounded-md border border-gray-300/50 bg-gray-100/30 px-3 py-2 hover:bg-gray-100/50 transition-colors">
                             <div className="min-w-0">
                               <p className="text-xs font-medium text-gray-900 truncate">{m.name}</p>
                             </div>
@@ -1462,6 +1564,7 @@ const Projects = () => {
                               </select>
                               {savedField === `${m.id}-reports_to` && <span className="absolute -top-4 left-0 text-[10px] text-emerald-400">Saved ✓</span>}
                             </div>
+                            <AllocationCell memberId={m.id} projectId={selectedId} />
                           </div>
                         );
                       })}
@@ -1534,7 +1637,6 @@ const Projects = () => {
                 })}
               </div>
             </div>
-
             {/* Project Documents - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100">
               <div className="flex items-center justify-between border-b border-gray-300 px-6 py-4">
@@ -1788,9 +1890,18 @@ const Projects = () => {
               label="Resource Type"
               value={newHierarchyMember.resourceType}
               onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, resourceType: v })}
-              options={["Internal", "External"]}
+              options={["Internal", "Consultant - Internal", "Consultant - External"]}
               required
             />
+            {newHierarchyMember.resourceType === "Consultant - External" && (
+              <FormInput
+                label="Vendor Name"
+                value={newHierarchyMember.vendor}
+                onChange={(v) => setNewHierarchyMember({ ...newHierarchyMember, vendor: v })}
+                placeholder="Enter vendor name"
+                required
+              />
+            )}
           </FormSection>
           <FormActions
             onSubmit={handleAddHierarchyMember}
@@ -1911,7 +2022,7 @@ const Projects = () => {
 };
 
 // Inline editing components (used for inline project field editing)
-const InlineEdit = ({ value, onSave, savedKey, multiline = false, className = "" }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean; className?: string }) => {
+const InlineEdit = ({ value, onSave, savedKey, multiline = false, className = "", noTruncate = false }: { value: string; onSave: (v: string) => void; savedKey: boolean; multiline?: boolean; className?: string; noTruncate?: boolean }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value);
   const timerRef = useRef<number>();
@@ -1957,7 +2068,7 @@ const InlineEdit = ({ value, onSave, savedKey, multiline = false, className = ""
     <div className="relative">
       <span
         onClick={() => setEditing(true)}
-        className={`cursor-pointer text-muted-foreground hover:text-foreground block ${multiline ? "whitespace-normal break-words" : "max-w-[160px] truncate"} ${className}`}
+        className={`cursor-pointer text-muted-foreground hover:text-foreground block ${multiline ? "whitespace-normal break-words" : (noTruncate ? "max-w-none" : "max-w-[160px] truncate")} ${className}`}
       >
         {value || "—"}
       </span>

@@ -3,7 +3,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
 import { FormInput, FormSelect, FormRange, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
-import { useProjects, useTeamMembers, useAssignments, useClients } from "@/hooks/useData";
+import { useProjects, useTeamMembers, useAssignments, useClients, TeamMember } from "@/hooks/useData";
 import { api } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,11 +25,29 @@ const Resources = () => {
   const [memberRoleFilter, setMemberRoleFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
 
-  const filteredMembers = (members || []).filter((m) => {
-    const bySearch = !memberSearch.trim() || m.name.toLowerCase().includes(memberSearch.toLowerCase().trim());
-    const byRole = memberRoleFilter === "all" || (m.role || "") === memberRoleFilter;
-    const byProject = projectFilter === "all" || (assignments || []).some((a) => a.team_member_id === m.id && a.project_id === projectFilter);
-    return bySearch && byRole && byProject;
+  // Group members by name to consolidate personas
+  const groupedMembers = (members || []).reduce((acc, m) => {
+    const name = (m.name || "").trim();
+    if (!name) return acc;
+    if (!acc[name]) acc[name] = [];
+    acc[name].push(m);
+    return acc;
+  }, {} as Record<string, TeamMember[]>);
+
+  const uniqueNames = Object.keys(groupedMembers).sort();
+
+  const filteredNames = uniqueNames.filter((name) => {
+    const group = groupedMembers[name];
+    const bySearch = !memberSearch.trim() || name.toLowerCase().includes(memberSearch.toLowerCase().trim());
+    if (!bySearch) return false;
+
+    const byRole = memberRoleFilter === "all" || group.some((m) => (m.role || "") === memberRoleFilter);
+    if (!byRole) return false;
+
+    const byProject = projectFilter === "all" || group.some((m) => (assignments || []).some((a) => a.team_member_id === m.id && a.project_id === projectFilter));
+    if (!byProject) return false;
+
+    return true;
   });
 
   const filteredProjects = projectFilter === "all" ? (projects || []) : (projects || []).filter((p) => p.id === projectFilter);
@@ -42,11 +60,21 @@ const Resources = () => {
     return () => { api.removeChannel(channel); };
   }, [qc]);
 
-  const getProjectsForMember = (memberId: string) =>
-    assignments?.filter((a) => a.team_member_id === memberId).map((a) => {
+  const getProjectsForGroup = (group: TeamMember[]) => {
+    const results: { projectName: string; role: string }[] = [];
+    const memberIds = group.map(m => m.id);
+
+    assignments?.filter((a) => memberIds.includes(a.team_member_id || "")).forEach((a) => {
       const p = projects?.find((pr) => pr.id === a.project_id);
-      return p?.name || "";
-    }).filter(Boolean) || [];
+      if (p) {
+        results.push({
+          projectName: p.name,
+          role: a.role_on_project || group.find(m => m.id === a.team_member_id)?.role || "Resource"
+        });
+      }
+    });
+    return results;
+  };
 
   const engagementColor = (pct: number) => {
     if (pct > 80) return "bg-success";
@@ -54,7 +82,7 @@ const Resources = () => {
     return "bg-destructive";
   };
 
-  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", engagementPct: 50, projectIds: [] as string[] });
+  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [] as string[] });
 
   const handleAddMember = async () => {
     const initials = newMember.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
@@ -62,7 +90,9 @@ const Resources = () => {
     const color = colors[Math.floor(Math.random() * colors.length)];
     const { data, error } = await api.from("team_members").insert({
       name: newMember.name, role: newMember.role, reports_to: newMember.reportsTo || null,
-      member_type: newMember.memberType, resource_type: newMember.resourceType || "Internal", engagement_pct: newMember.engagementPct,
+      member_type: newMember.memberType, resource_type: newMember.resourceType || "Internal",
+      vendor: newMember.resourceType === "Consultant - External" ? newMember.vendor : null,
+      engagement_pct: newMember.engagementPct,
       initials, color_hex: color,
     }).select().single();
     if (error) { toast.error("Failed to add member"); return; }
@@ -75,7 +105,7 @@ const Resources = () => {
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
     toast.success(`✓ Member added · ${new Date().toLocaleTimeString()}`);
     setShowAddMember(false);
-    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", engagementPct: 50, projectIds: [] });
+    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [] });
   };
 
   const handleToggleAssignment = async (memberId: string, projectId: string) => {
@@ -95,40 +125,44 @@ const Resources = () => {
     setConfirmToggle(null);
   };
 
-  const handleDeleteMember = async (memberId: string) => {
-    const member = members?.find((m) => m.id === memberId);
-    if (!member) return;
+  const handleDeleteGroup = async (name: string) => {
+    const group = groupedMembers[name];
+    if (!group) return;
 
-    const memberAssignments = assignments?.filter((a) => a.team_member_id === memberId) || [];
-    for (const a of memberAssignments) {
-      const { error } = await api.from("project_assignments").delete().eq("id", a.id);
+    for (const member of group) {
+      const memberAssignments = assignments?.filter((a) => a.team_member_id === member.id) || [];
+      for (const a of memberAssignments) {
+        const { error } = await api.from("project_assignments").delete().eq("id", a.id);
+        if (error) {
+          toast.error(`Failed to delete assignments for ${member.name}`);
+          return;
+        }
+        await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+      }
+
+      const { error } = await api.from("team_members").delete().eq("id", member.id);
       if (error) {
-        toast.error("Failed to delete assignments for member");
+        toast.error(`Failed to delete member record for ${member.name}`);
         return;
       }
-      await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+      await writeAuditLog("team_members", member.id, "DELETE", member as any, null);
     }
-
-    const { error } = await api.from("team_members").delete().eq("id", memberId);
-    if (error) {
-      toast.error("Failed to delete member");
-      return;
-    }
-    await writeAuditLog("team_members", memberId, "DELETE", member as any, null);
 
     qc.invalidateQueries({ queryKey: ["team_members"] });
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
-    toast.success(`✓ Member deleted · ${new Date().toLocaleTimeString()}`);
+    toast.success(`✓ Consolidated profile for ${name} deleted · ${new Date().toLocaleTimeString()}`);
     setConfirmDeleteMember(null);
-    if (editMember === memberId) {
+    if (editMember && members?.find(m => m.id === editMember)?.name === name) {
       setEditMember(null);
     }
   };
 
-  // Effort data
-  const effortData = filteredMembers.map((m) => {
-    const totalHours = assignments?.filter((a) => a.team_member_id === m.id).reduce((s, a) => s + (a.allocated_hours_per_week || 8), 0) || 0;
-    return { name: m.name, hours: totalHours, color: m.color_hex || "#666" };
+  // Effort data - based on grouped names
+  const effortData = filteredNames.map((name) => {
+    const group = groupedMembers[name];
+    const memberIds = group.map(m => m.id);
+    const totalHours = assignments?.filter((a) => memberIds.includes(a.team_member_id || "")).reduce((s, a) => s + (a.allocated_hours_per_week || 8), 0) || 0;
+    return { name: name, hours: totalHours, color: group[0].color_hex || "#666" };
   }).filter((d) => d.hours > 0) || [];
 
   // Gantt months
@@ -183,33 +217,76 @@ const Resources = () => {
           </button>
         </div>
         <div className="grid grid-cols-4 gap-3">
-          {filteredMembers.map((m) => {
-            const memberProjects = getProjectsForMember(m.id);
+          {filteredNames.map((name) => {
+            const group = groupedMembers[name];
+            const primaryMember = group[0];
+            const memberProjects = getProjectsForGroup(group);
             return (
-              <div key={m.id} onClick={() => setEditMember(m.id)} className="cursor-pointer rounded-lg border border-gray-300/50 bg-gradient-to-b from-gray-100/50 to-gray-50/30 p-4 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm" style={{ backgroundColor: m.resource_type === 'External' ? '#F59E0B' : '#22C55E', color: "#fff" }}>
-                    {m.initials}
+              <div key={name} onClick={() => setEditMember(primaryMember.id)} className="group cursor-pointer rounded-2xl border border-gray-300 bg-white shadow-sm hover:border-blue-500/50 hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
+                {/* Card Header: Initials + Name */}
+                <div className="flex items-center gap-3 p-4 bg-gray-100/50 border-b border-gray-200">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md border-2 border-white" style={{
+                    backgroundColor: primaryMember.resource_type === 'Consultant - External' ? '#6366F1' : primaryMember.resource_type === 'Consultant - Internal' ? '#F59E0B' : '#22C55E'
+                  }}>
+                    {primaryMember.initials}
                   </div>
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">{m.name}</p>
-                    <p className="text-[10px] text-gray-500">{m.role}</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-gray-900 truncate leading-tight">{name}</p>
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'Consultant - External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
+                      primaryMember.resource_type === 'Consultant - Internal' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
+                        "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
+                      }`}>
+                      {primaryMember.resource_type || "Internal"}
+                    </span>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-x-1 gap-y-1.5">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${m.resource_type === 'External'
-                    ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
-                    : "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
-                    }`}>
-                    {m.resource_type || "Internal"}
-                  </span>
-                  {memberProjects.map((p) => (
-                    <span key={p} className="rounded-full bg-slate-700/30 px-2 py-0.5 text-[9px] font-medium text-gray-600 border border-slate-600/20 shadow-sm">{p}</span>
-                  ))}
+
+                {/* Allocation Progress */}
+                <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Allocation</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(primaryMember.engagement_pct || 0) > 80 ? "bg-emerald-100 text-emerald-600" :
+                        (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
+                          "bg-red-100 text-red-600"
+                      }`}>
+                      {primaryMember.engagement_pct || 0}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                    <div
+                      className={`h-full transition-all duration-500 ease-out rounded-full ${engagementColor(primaryMember.engagement_pct || 0)}`}
+                      style={{ width: `${Math.min(100, primaryMember.engagement_pct || 0)}%` }}
+                    />
+                  </div>
                 </div>
-                <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => setConfirmDeleteMember(m.id)} className="rounded-md p-1 text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-all" title="Delete Member">
-                    <Trash2 size={14} />
+
+                {/* Stacked Roles Section */}
+                <div className="flex flex-col flex-1 divide-y divide-gray-200">
+                  {memberProjects.length === 0 ? (
+                    <div className="p-4 py-8 text-center bg-gray-50/30">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Unassigned</p>
+                      <p className="text-[11px] text-gray-500 font-medium italic">{primaryMember.role}</p>
+                    </div>
+                  ) : (
+                    memberProjects.map((p, pIdx) => (
+                      <div key={`${name}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
+                        </div>
+                        <div className="ml-2">
+                          <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
+                            {p.projectName}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Card Footer: Actions */}
+                <div className="mt-auto px-4 py-2 bg-gray-50/30 border-t border-gray-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => setConfirmDeleteMember(name)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-all" title="Delete Consolidated Profile">
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
@@ -235,24 +312,26 @@ const Resources = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredMembers.map((m, idx) => {
+                {filteredNames.map((name, idx) => {
+                  const group = groupedMembers[name];
+                  const primaryMember = group[0];
                   const isEvenRow = idx % 2 === 0;
                   return (
-                    <tr key={m.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
-                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{m.name}</td>
+                    <tr key={name} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{name}</td>
                       {filteredProjects.map((p) => {
-                        const isAssigned = assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id);
-                        const isConfirming = confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id;
+                        const isAssigned = group.some((m) => assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id));
+                        const isConfirming = group.some((m) => confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id);
                         return (
                           <td key={p.id} className="px-4 py-4 text-center">
                             {isConfirming ? (
                               <div className="flex items-center justify-center gap-1">
-                                <button onClick={() => handleToggleAssignment(m.id, p.id)} className="text-emerald-600 hover:text-emerald-700"><Check size={16} /></button>
+                                <button onClick={() => handleToggleAssignment(primaryMember.id, p.id)} className="text-emerald-600 hover:text-emerald-700"><Check size={16} /></button>
                                 <button onClick={() => setConfirmToggle(null)} className="text-gray-500 hover:text-gray-700"><X size={16} /></button>
                               </div>
                             ) : (
                               <button
-                                onClick={() => isAssigned ? setConfirmToggle({ memberId: m.id, projectId: p.id }) : handleToggleAssignment(m.id, p.id)}
+                                onClick={() => isAssigned ? setConfirmToggle({ memberId: primaryMember.id, projectId: p.id }) : handleToggleAssignment(primaryMember.id, p.id)}
                                 className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-gray-300 hover:bg-gray-400"}`}
                               >
                                 {isAssigned && <Check size={14} className="text-white font-bold" />}
@@ -367,9 +446,18 @@ const Resources = () => {
               label="Resource Type"
               value={newMember.resourceType}
               onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
-              options={["Internal", "External"]}
+              options={["Internal", "Consultant - Internal", "Consultant - External"]}
               required
             />
+            {newMember.resourceType === "Consultant - External" && (
+              <FormInput
+                label="Vendor Name"
+                value={newMember.vendor}
+                onChange={(v) => setNewMember({ ...newMember, vendor: v })}
+                placeholder="Enter vendor name"
+                required
+              />
+            )}
           </FormSection>
           <FormSection title="Projects">
             <FormCheckboxGroup
@@ -386,60 +474,107 @@ const Resources = () => {
           />
         </FormModal>
 
-        {/* Edit Member Drawer */}
-        {editMember && (() => {
-          const m = members?.find((mem) => mem.id === editMember);
-          if (!m) return null;
-          return (
-            <EditMemberDrawer member={m} onClose={() => setEditMember(null)} qc={qc} />
-          );
-        })()}
+        {editMember && members && (
+          <EditMemberDrawer
+            members={members.filter(m => m.name === (members.find(x => x.id === editMember)?.name || ""))}
+            projects={projects || []}
+            assignments={assignments || []}
+            onClose={() => setEditMember(null)}
+            qc={qc}
+          />
+        )}
 
         {/* Delete Member Confirmation Modal */}
-        {confirmDeleteMember && (() => {
-          const member = members?.find((m) => m.id === confirmDeleteMember);
-          if (!member) return null;
-          return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setConfirmDeleteMember(null)}>
-              <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="mb-4">
-                  <h3 className="text-lg font-bold text-gray-900">Delete Member</h3>
-                  <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete <span className="font-semibold text-red-500">{member.name}</span>?</p>
-                  <p className="mt-2 text-xs text-gray-500">This action will remove the member from all assigned projects and cannot be undone.</p>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
-                    Cancel
-                  </button>
-                  <button onClick={() => handleDeleteMember(confirmDeleteMember)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
-                    Delete Member
-                  </button>
-                </div>
+        {confirmDeleteMember && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setConfirmDeleteMember(null)}>
+            <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Consolidated Profile</h3>
+              <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete the profile for <span className="font-bold text-red-600">{confirmDeleteMember}</span>? This will remove all associated project records and designations for this person across all documents.</p>
+              <div className="flex gap-3">
+                <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all">Cancel</button>
+                <button onClick={() => handleDeleteGroup(confirmDeleteMember)} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 shadow-lg shadow-red-600/30 transition-all">Delete Everything</button>
               </div>
             </div>
-          );
-        })()}
+          </div>
+        )}
       </div>
-    </AppLayout>
+    </AppLayout >
   );
 };
 
-const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () => void; qc: any }) => {
-  const [form, setForm] = useState({ name: member.name, role: member.role, reportsTo: member.reports_to || "", memberType: member.member_type || "Full-time", resourceType: member.resource_type || "Internal", engagementPct: member.engagement_pct || 50 });
+const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { members: any[]; projects: any[]; assignments: any[]; onClose: () => void; qc: any }) => {
+  const primaryMember = members[0];
+  const [form, setForm] = useState({
+    name: primaryMember.name,
+    role: primaryMember.role,
+    reportsTo: primaryMember.reports_to || "",
+    memberType: primaryMember.member_type || "Full-time",
+    resourceType: primaryMember.resource_type || "Internal",
+    vendor: primaryMember.vendor || "",
+    engagementPct: primaryMember.engagement_pct || 50
+  });
   const [isLoading, setIsLoading] = useState(false);
+  const [localAssignments, setLocalAssignments] = useState<{ id: string; projectName: string; role: string; memberId: string }[]>([]);
+
+  useEffect(() => {
+    const memberIds = members.map(m => m.id);
+    const allAssignments = (assignments || [])
+      .filter((a) => memberIds.includes(a.team_member_id || ""))
+      .map((a) => {
+        const p = projects?.find((pr) => pr.id === a.project_id);
+        const m = members.find(x => x.id === a.team_member_id);
+        return {
+          id: a.id,
+          memberId: a.team_member_id!,
+          projectName: p?.name || "Unknown Project",
+          role: a.role_on_project || m?.role || ""
+        };
+      })
+      .filter(a => a.projectName !== "Unknown Project");
+    setLocalAssignments(allAssignments);
+  }, [members, assignments, projects]);
 
   const handleSave = async () => {
     setIsLoading(true);
-    const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, resource_type: member.resource_type, engagement_pct: member.engagement_pct };
-    const newValues = { name: form.name, role: form.role, reports_to: form.reportsTo || null, member_type: form.memberType, resource_type: form.resourceType || "Internal", engagement_pct: form.engagementPct };
-    const { error } = await api.from("team_members").update(newValues).eq("id", member.id);
-    if (error) {
-      toast.error("Failed to update");
-      setIsLoading(false);
-      return;
+
+    const newValues = {
+      name: form.name,
+      role: form.role,
+      reports_to: form.reportsTo || null,
+      member_type: form.memberType,
+      resource_type: form.resourceType || "Internal",
+      vendor: form.resourceType === "Consultant - External" ? form.vendor : null,
+      engagement_pct: form.engagementPct
+    };
+
+    // Update all member records in the group
+    for (const member of members) {
+      const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, resource_type: member.resource_type, vendor: member.vendor, engagement_pct: member.engagement_pct };
+      const { error: memberError } = await api.from("team_members").update(newValues).eq("id", member.id);
+      if (!memberError) {
+        await writeAuditLog("team_members", member.id, "UPDATE", oldValues, newValues);
+      }
     }
-    await writeAuditLog("team_members", member.id, "UPDATE", oldValues, newValues);
+
+    // Update specific roles for project assignments
+    for (const la of localAssignments) {
+      const originalAssignment = assignments?.find(a => a.id === la.id);
+      if (originalAssignment && originalAssignment.role_on_project !== la.role) {
+        const { error: assignmentError } = await api.from("project_assignments")
+          .update({ role_on_project: la.role })
+          .eq("id", la.id);
+
+        if (!assignmentError) {
+          await writeAuditLog("project_assignments", la.id, "UPDATE",
+            { role_on_project: originalAssignment.role_on_project },
+            { role_on_project: la.role }
+          );
+        }
+      }
+    }
+
     qc.invalidateQueries({ queryKey: ["team_members"] });
+    qc.invalidateQueries({ queryKey: ["project_assignments"] });
     toast.success(`✓ Updated · ${new Date().toLocaleTimeString()}`);
     setIsLoading(false);
     onClose();
@@ -469,6 +604,33 @@ const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () =>
           disabled={isLoading}
         />
       </FormSection>
+
+      {localAssignments.length > 0 && (
+        <FormSection title="Project Designations">
+          <div className="space-y-4 pt-2">
+            {localAssignments.map((la, idx) => (
+              <div key={la.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Project</span>
+                  <span className="text-[11px] font-bold text-gray-800 bg-white px-2 py-0.5 rounded border border-gray-200 shadow-sm">{la.projectName}</span>
+                </div>
+                <FormInput
+                  label="Specific Role / Designation"
+                  value={la.role}
+                  onChange={(v) => {
+                    const newLA = [...localAssignments];
+                    newLA[idx].role = v;
+                    setLocalAssignments(newLA);
+                  }}
+                  disabled={isLoading}
+                  placeholder="e.g. Lead Developer, QA Tester"
+                />
+              </div>
+            ))}
+          </div>
+        </FormSection>
+      )}
+
       <FormSection title="Assignment">
         <FormSelect
           label="Member Type"
@@ -482,10 +644,20 @@ const EditMemberDrawer = ({ member, onClose, qc }: { member: any; onClose: () =>
           label="Resource Type"
           value={form.resourceType}
           onChange={(v) => setForm({ ...form, resourceType: v })}
-          options={["Internal", "External"]}
+          options={["Internal", "Consultant - Internal", "Consultant - External"]}
           disabled={isLoading}
           required
         />
+        {form.resourceType === "Consultant - External" && (
+          <FormInput
+            label="Vendor Name"
+            value={form.vendor}
+            onChange={(v) => setForm({ ...form, vendor: v })}
+            disabled={isLoading}
+            placeholder="Enter vendor name"
+            required
+          />
+        )}
       </FormSection>
       <FormActions
         onSubmit={handleSave}

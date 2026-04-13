@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export type Client = { id: string; name: string };
@@ -167,7 +167,7 @@ export const useMilestoneHealth = (projectId: string) =>
     queryKey: ["milestone_health", projectId],
     queryFn: async () => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}api/projects/${projectId}/milestone-health`);
+      const res = await fetch(`${baseUrl}/api/projects/${projectId}/milestone-health`);
       if (!res.ok) throw new Error("Failed to fetch milestone health");
       return (await res.json()) as MilestoneHealthData;
     },
@@ -175,3 +175,40 @@ export const useMilestoneHealth = (projectId: string) =>
     staleTime: 0,
     gcTime: 0,
   });
+export type Engagement = {
+  id: string;
+  team_member_id: string;
+  project_id: string;
+  engagement_level: string;
+};
+
+export const useEngagement = (memberId: string, projectId: string) =>
+  useQuery({
+    queryKey: ["engagement", memberId, projectId],
+    queryFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/team_members_engagement/member/${memberId}/project/${projectId}`);
+      if (!res.ok) throw new Error("Failed to fetch engagement");
+      const data = await res.json();
+      return (data[0] || { engagement_level: "0" }) as Engagement;
+    },
+    enabled: !!memberId && !!projectId,
+  });
+
+export const useUpdateEngagement = () => {
+  const qc = useQueryClient();
+  return {
+    mutateAsync: async (payload: { team_member_id: string; project_id: string; engagement_level: string }) => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/team_members_engagement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to update engagement");
+      const data = await res.json();
+      qc.invalidateQueries({ queryKey: ["engagement", payload.team_member_id, payload.project_id] });
+      return data as Engagement;
+    }
+  };
+};
