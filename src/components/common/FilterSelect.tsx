@@ -29,7 +29,7 @@ const FilterSelect: React.FC<FilterSelectProps> = ({
           onChange={(e) => onChange(e.target.value)}
           className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 font-medium transition-all duration-200 hover:border-blue-500/50 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
         >
-          <option value="" disabled selected hidden>
+          <option value="" disabled hidden>
             {placeholder}
           </option>
           {options.map((option) => (
