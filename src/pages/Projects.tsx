@@ -9,7 +9,7 @@ import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTra
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon, Upload, Activity, CheckCircle, Clock, Users } from "lucide-react";
+import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
 
@@ -114,11 +114,25 @@ const Projects = () => {
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
   const { data: milestones } = useMilestones();
-  const { data: members } = useTeamMembers();
+  const { data: members, isLoading: membersLoading } = useTeamMembers();
   const { data: assignments } = useAssignments();
   const { data: auditLog } = useAuditLog();
   const { data: allUpdates = [] } = useProjectUpdates();
   const { data: projDocs = [] } = useProjectDocuments();
+
+  if (membersLoading) {
+    return (
+      <AppLayout>
+        <Topbar title="Project Insights" />
+        <div className="flex h-[80vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Initializing Dashboard...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);

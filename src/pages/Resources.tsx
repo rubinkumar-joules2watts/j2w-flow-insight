@@ -7,16 +7,19 @@ import { useProjects, useTeamMembers, useAssignments, useClients, TeamMember } f
 import { api } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Trash2, Check } from "lucide-react";
+import { Plus, X, Trash2, Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 const Resources = () => {
   const qc = useQueryClient();
-  const { data: members } = useTeamMembers();
-  const { data: projects } = useProjects();
-  const { data: assignments } = useAssignments();
+  const { data: members, isLoading: membersLoading } = useTeamMembers();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
   const { data: clients } = useClients();
+
+  const isInitialLoading = membersLoading || projectsLoading || assignmentsLoading;
+
   const [showAddMember, setShowAddMember] = useState(false);
   const [editMember, setEditMember] = useState<string | null>(null);
   const [confirmToggle, setConfirmToggle] = useState<{ memberId: string; projectId: string } | null>(null);
@@ -167,6 +170,20 @@ const Resources = () => {
 
   // Gantt months
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  if (isInitialLoading) {
+    return (
+      <AppLayout>
+        <Topbar title="Resource Allocation" />
+        <div className="flex h-[80vh] items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Loading Records...</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
