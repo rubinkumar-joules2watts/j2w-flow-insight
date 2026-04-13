@@ -246,8 +246,8 @@ const Resources = () => {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Allocation</span>
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(primaryMember.engagement_pct || 0) > 80 ? "bg-emerald-100 text-emerald-600" :
-                        (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
-                          "bg-red-100 text-red-600"
+                      (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
+                        "bg-red-100 text-red-600"
                       }`}>
                       {primaryMember.engagement_pct || 0}%
                     </span>
@@ -349,6 +349,7 @@ const Resources = () => {
         </div>
 
         {/* Effort Chart - Dashboard Style */}
+        {/* 
         <div className="rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6">
           <h3 className="mb-4 text-sm font-bold text-gray-900">Effort Tracking (Est. Hours/Week)</h3>
           <ResponsiveContainer width="100%" height={Math.max(200, effortData.length * 32)}>
@@ -362,6 +363,7 @@ const Resources = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        */}
 
         {/* Gantt Timeline */}
         {/* Gantt Timeline - Commented out for now
