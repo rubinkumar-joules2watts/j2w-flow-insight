@@ -27,5 +27,8 @@ dist-ssr
 .env
 .claude
 .serena
+
+# Markdown files (except README)
 *.md
-!.Readme.md
+!README.md
+backend/
