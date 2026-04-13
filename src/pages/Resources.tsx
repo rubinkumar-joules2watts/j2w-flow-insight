@@ -257,24 +257,47 @@ const Resources = () => {
                     </span>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-x-1 gap-y-1.5">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[8px] font-bold uppercase border tracking-wider transition-all ${primaryMember.resource_type === "Consultant - External"
-                      ? "bg-amber-400/10 text-amber-500 border-amber-400/20"
-                      : "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
-                      }`}
-                  >
-                    {primaryMember.resource_type || "Internal"}
-                  </span>
-                  {memberProjects.map((proj) => (
-                    <span
-                      key={`${primaryMember.id}-${proj.projectName}-${proj.role}`}
-                      className="rounded-full bg-slate-700/30 px-2 py-0.5 text-[9px] font-medium text-gray-600 border border-slate-600/20 shadow-sm"
-                      title={proj.role ? `${proj.projectName} · ${proj.role}` : proj.projectName}
-                    >
-                      {proj.projectName}
+
+                {/* Allocation Progress */}
+                <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Allocation</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(primaryMember.engagement_pct || 0) > 80 ? "bg-emerald-100 text-emerald-600" :
+                      (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
+                        "bg-red-100 text-red-600"
+                      }`}>
+                      {primaryMember.engagement_pct || 0}%
                     </span>
-                  ))}
+                  </div>
+                  <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                    <div
+                      className={`h-full transition-all duration-500 ease-out rounded-full ${engagementColor(primaryMember.engagement_pct || 0)}`}
+                      style={{ width: `${Math.min(100, primaryMember.engagement_pct || 0)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stacked Roles Section */}
+                <div className="flex flex-col flex-1 divide-y divide-gray-200">
+                  {memberProjects.length === 0 ? (
+                    <div className="p-4 py-8 text-center bg-gray-50/30">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Unassigned</p>
+                      <p className="text-[11px] text-gray-500 font-medium italic">{primaryMember.role}</p>
+                    </div>
+                  ) : (
+                    memberProjects.map((p, pIdx) => (
+                      <div key={`${name}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
+                        </div>
+                        <div className="ml-2">
+                          <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
+                            {p.projectName}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 {/* Card Footer: Actions */}

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export type Client = { id: string; name: string };
@@ -182,61 +182,40 @@ export const useMilestoneHealth = (projectId: string) =>
     staleTime: 0,
     gcTime: 0,
   });
+export type Engagement = {
+  id: string;
+  team_member_id: string;
+  project_id: string;
+  engagement_level: string;
+};
 
 export const useEngagement = (memberId: string, projectId: string) =>
   useQuery({
-    queryKey: ["team_member_engagement", memberId, projectId],
+    queryKey: ["engagement", memberId, projectId],
     queryFn: async () => {
-      const baseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
-      const res = await fetch(
-        `${baseUrl}/api/team_members_engagement/member/${encodeURIComponent(memberId)}/project/${encodeURIComponent(projectId)}`
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Failed to fetch engagement");
-      const list = (json || []) as TeamMemberEngagement[];
-      return list[0] ?? null;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}api/team_members_engagement/member/${memberId}/project/${projectId}`);
+      if (!res.ok) throw new Error("Failed to fetch engagement");
+      const data = await res.json();
+      return (data[0] || { engagement_level: "0" }) as Engagement;
     },
     enabled: !!memberId && !!projectId,
   });
 
 export const useUpdateEngagement = () => {
   const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (payload: Pick<TeamMemberEngagement, "team_member_id" | "project_id" | "engagement_level">) => {
-      const baseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
-
-      const existingRes = await fetch(
-        `${baseUrl}/api/team_members_engagement/member/${encodeURIComponent(payload.team_member_id)}/project/${encodeURIComponent(payload.project_id)}`
-      );
-      const existingJson = await existingRes.json();
-      if (!existingRes.ok) throw new Error(existingJson?.error || "Failed to load existing engagement");
-      const existing = (existingJson || []) as TeamMemberEngagement[];
-
-      const record = existing[0];
-      if (record?.id) {
-        const patchRes = await fetch(`${baseUrl}/api/team_members_engagement/${encodeURIComponent(record.id)}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ engagement_level: payload.engagement_level }),
-        });
-        const patchJson = await patchRes.json();
-        if (!patchRes.ok) throw new Error(patchJson?.error || "Failed to update engagement");
-        return patchJson as TeamMemberEngagement;
-      }
-
-      const createRes = await fetch(`${baseUrl}/api/team_members_engagement`, {
+  return {
+    mutateAsync: async (payload: { team_member_id: string; project_id: string; engagement_level: string }) => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}api/team_members_engagement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const createJson = await createRes.json();
-      if (!createRes.ok) throw new Error(createJson?.error || "Failed to create engagement");
-      return createJson as TeamMemberEngagement;
-    },
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: ["team_member_engagement", vars.team_member_id, vars.project_id] });
-      qc.invalidateQueries({ queryKey: ["team_members"] });
-    },
-  });
+      if (!res.ok) throw new Error("Failed to update engagement");
+      const data = await res.json();
+      qc.invalidateQueries({ queryKey: ["engagement", payload.team_member_id, payload.project_id] });
+      return data as Engagement;
+    }
+  };
 };
