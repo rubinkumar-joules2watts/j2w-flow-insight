@@ -9,8 +9,8 @@ const Topbar = ({ title }: TopbarProps) => {
       <div className="flex h-16 items-center px-6">
         {/* Title */}
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{title}</h1>
-          <p className="text-[10px] text-gray-500 font-light tracking-widest leading-none">DELIVERY MANAGEMENT</p>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">{title}</h1>
+          <p className="text-xs text-gray-500 font-light tracking-widest">DELIVERY MANAGEMENT</p>
         </div>
       </div>
     </header>
