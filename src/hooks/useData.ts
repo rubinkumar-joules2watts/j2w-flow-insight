@@ -200,7 +200,7 @@ export const useUpdateEngagement = () => {
   return {
     mutateAsync: async (payload: { team_member_id: string; project_id: string; engagement_level: string }) => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}/api/team_members_engagement`, {
+      const res = await fetch(`${baseUrl}api/team_members_engagement`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
