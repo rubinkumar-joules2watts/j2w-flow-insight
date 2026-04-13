@@ -9,7 +9,7 @@ import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTra
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload } from "lucide-react";
+import { Plus, X, AlertTriangle, History, Trash2, Send, Calendar, MessageSquare, ChevronDown, ChevronRight, FileUp, FileText, Download, Loader2, Paperclip, Link as LinkIcon, Upload, CheckCircle, Clock, Activity, Users } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
 
