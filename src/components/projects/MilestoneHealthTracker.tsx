@@ -529,8 +529,10 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
     timelineStart = new Date(anchorDate);
   }
 
-  // Align to Sunday of that week for consistent alignment
-  timelineStart.setDate(timelineStart.getDate() - timelineStart.getDay());
+  // Align to Monday of that week for consistent alignment with backend (Feb 2-08, 2026)
+  const day = timelineStart.getDay();
+  const diff = timelineStart.getDate() - day + (day === 0 ? -6 : 1);
+  timelineStart.setDate(diff);
 
   // End logic: Max of (Project End, CURRENT_DATE + 4 months) Capped at Dec 2026 for now
   let maxProjectDate = new Date();
@@ -591,10 +593,13 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
   sortedWeekIndices.forEach((weekIdx) => {
     const week = processedAllWeeks[String(weekIdx)];
     const startDate = new Date(week.start);
-    const year = startDate.getFullYear();
-    const month = String(startDate.getMonth() + 1).padStart(2, "0");
+    // Use the midpoint of the week (3 days after start) to determine the "majority" month
+    const majorityDate = new Date(startDate);
+    majorityDate.setDate(majorityDate.getDate() + 3);
+    const year = majorityDate.getFullYear();
+    const month = String(majorityDate.getMonth() + 1).padStart(2, "0");
     const monthKey = `${year}-${month}`;
-    const monthLabel = `${startDate.toLocaleString("en-US", { month: "short" })} ${year}`;
+    const monthLabel = `${majorityDate.toLocaleString("en-US", { month: "short" })} ${year}`;
 
     if (!monthGroups[monthKey]) {
       monthGroups[monthKey] = { startIdx: weekIdx, endIdx: weekIdx, label: monthLabel };
