@@ -10,7 +10,7 @@ const Topbar = ({ title }: TopbarProps) => {
         {/* Title */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">{title}</h1>
-          <p className="text-xs text-gray-500 font-light tracking-widest">DELIVERY MANAGEMENT</p>
+          <p className="text-xs text-gray-500 font-light tracking-widest">DELIVERY MANAGEMENT s</p>
         </div>
       </div>
     </header>

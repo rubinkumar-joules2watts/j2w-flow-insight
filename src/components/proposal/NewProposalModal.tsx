@@ -4,6 +4,7 @@ import {
   Check, AlertTriangle, Building2, Zap, Calendar, Users, CheckCircle2,
   HelpCircle, ChevronDown, ChevronUp, ExternalLink, Edit2, Pencil
 } from 'lucide-react'
+import { extractProposalDocument, type ExtractedProposalResponse } from '@/lib/proposalExtractionApi'
 import internalData from '../../data/internal_data.js'
 import externalData from '../../data/external_data.js'
 
@@ -88,6 +89,48 @@ function fmtDate(s: string): string {
 
 function genId(): string {
   return Math.random().toString(36).slice(2, 8)
+}
+
+function todayIso(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+function normalizeMilestonesFromExtracted(rows: ExtractedProposalResponse['proposal']['milestones']): MilestoneRow[] {
+  if (!rows.length) return []
+
+  const start = todayIso()
+  let cursor = start
+  return rows.slice(0, 12).map((row, idx) => {
+    const normalizedStart = row.startDate || cursor
+    const normalizedEnd = row.endDate || normalizedStart
+    cursor = addDays(normalizedEnd, 1)
+    return {
+      id: row.id || `m${idx + 1}`,
+      name: (row.name || `Milestone ${idx + 1}`).trim(),
+      startDate: normalizedStart,
+      endDate: normalizedEnd,
+    }
+  })
+}
+
+function normalizeResourcesFromExtracted(rows: ExtractedProposalResponse['proposal']['resources']): ResourceRow[] {
+  if (!rows.length) return []
+  return rows.slice(0, 12).map((row, idx) => ({
+    id: row.id || `r${idx + 1}`,
+    role: (row.role || '').trim(),
+    skills: (row.skills || []).filter(Boolean).slice(0, 8),
+    responsibilities: (row.responsibilities || '').trim(),
+    bandwidth: Math.max(0, Math.min(100, Number(row.bandwidth || 100))),
+  }))
+}
+
+function isIncompatibleDocument(warnings: string[]): boolean {
+  return warnings.some(w => w.startsWith('INCOMPATIBLE_DOCUMENT:'))
+}
+
+function getIncompatibleMessage(warnings: string[]): string {
+  const w = warnings.find(w => w.startsWith('INCOMPATIBLE_DOCUMENT:'))
+  return w ? w.replace('INCOMPATIBLE_DOCUMENT: ', '') : ''
 }
 
 function scoreEmployee(emp: any, required: string[]): { score: number; matched: string[]; partial: string[] } {
@@ -441,6 +484,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const [editingResourceId, setEditingResourceId] = useState<string | null>(null)
   const [selectedAllocId, setSelectedAllocId] = useState<string | null>(null)
   const [searchTab, setSearchTab] = useState<'Internal Team' | 'External Consultant' | 'External Partner'>('Internal Team')
+  const [extractWarnings, setExtractWarnings] = useState<string[]>([])
+  const [extractError, setExtractError] = useState<string | null>(null)
+  const [analysisMeta, setAnalysisMeta] = useState<{ processingMs: number; pages: number } | null>(null)
 
   const handleClose = () => {
     setStep('choose'); setFileName(''); setProjectName(''); setClient('')
@@ -449,19 +495,42 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     setTbdAssigned({})
     setEditingMilestoneId(null); setEditingResourceId(null)
     setSelectedAllocId(null); setSearchTab('Internal Team')
+    setExtractWarnings([]); setExtractError(null); setAnalysisMeta(null)
     onClose()
   }
 
-  const handleFile = (file: File) => {
+  const handleFile = async (file: File) => {
     setFileName(file.name)
+    setExtractWarnings([])
+    setExtractError(null)
+    setAnalysisMeta(null)
     setStep('uploading')
-    setTimeout(() => {
-      setProjectName(GEHC_DATA.projectName)
-      setClient(GEHC_DATA.client)
-      setMilestones(GEHC_DATA.milestones.map(m => ({ ...m })))
-      setResources(GEHC_DATA.resources.map(r => ({ ...r, skills: [...r.skills] })))
+
+    try {
+      const extracted = await extractProposalDocument(file)
+      const extractedMilestones = normalizeMilestonesFromExtracted(extracted.proposal?.milestones || [])
+      const extractedResources = normalizeResourcesFromExtracted(extracted.proposal?.resources || [])
+
+      setProjectName(extracted.proposal?.project_name || '')
+      setClient(extracted.proposal?.client || '')
+      setMilestones(extractedMilestones)
+      setResources(extractedResources)
+      setExtractWarnings(extracted.proposal?.warnings || [])
+      setAnalysisMeta({
+        processingMs: extracted.metadata?.processing_ms || 0,
+        pages: extracted.metadata?.pages || 0,
+      })
       setStep('s1')
-    }, 2400)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Document analysis failed'
+      setExtractError(message)
+      setProjectName('')
+      setClient('')
+      setMilestones([])
+      setResources([])
+      setExtractWarnings([])
+      setStep('s1')
+    }
   }
 
   const updateMilestone = (idx: number, field: keyof MilestoneRow, value: string) => {
@@ -740,6 +809,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
               <div className="text-center">
                 <p className="font-bold text-gray-900 text-base">Analyzing document…</p>
                 <p className="text-xs text-gray-400 mt-0.5">{fileName}</p>
+                <p className="text-[11px] text-blue-500 mt-1">Secure parsing in progress. This can take a few seconds for larger PDFs.</p>
               </div>
               <div className="flex gap-2">
                 {['Extracting milestones', 'Mapping resources', 'Identifying skills'].map((label, i) => (
@@ -758,6 +828,49 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
           {/* ══ STEP 1 — Extraction Review ════════════════════════════════════ */}
           {step === 's1' && (
             <div className="p-6 space-y-5">
+              {extractError && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <AlertTriangle size={14} className="text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-amber-700">Extraction fallback activated</p>
+                    <p className="text-xs text-amber-700/90 mt-0.5">{extractError}</p>
+                  </div>
+                </div>
+              )}
+
+              {isIncompatibleDocument(extractWarnings) && (
+                <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                  <AlertTriangle size={16} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-orange-700">Document not recognized as a project proposal</p>
+                    <p className="text-xs text-orange-600 mt-0.5">{getIncompatibleMessage(extractWarnings)}</p>
+                  </div>
+                </div>
+              )}
+
+              {!isIncompatibleDocument(extractWarnings) && (extractWarnings.length > 0 || analysisMeta) && (
+                <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 space-y-1.5">
+                  {analysisMeta && (
+                    <p className="text-[11px] text-blue-700 font-semibold">
+                      Parsed in {Math.max(1, Math.round(analysisMeta.processingMs / 1000))}s
+                      {analysisMeta.pages > 0 ? ` · ${analysisMeta.pages} page${analysisMeta.pages > 1 ? 's' : ''}` : ''}
+                    </p>
+                  )}
+                  {extractWarnings.filter(w => !w.startsWith('INCOMPATIBLE_DOCUMENT:')).map((warning, idx) => (
+                    <p key={`${warning}-${idx}`} className="text-[11px] text-blue-700">• {warning}</p>
+                  ))}
+                </div>
+              )}
+
+              {isIncompatibleDocument(extractWarnings) && analysisMeta && (
+                <div className="rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-2">
+                  <p className="text-[11px] text-gray-500">
+                    Parsed in {Math.max(1, Math.round(analysisMeta.processingMs / 1000))}s
+                    {analysisMeta.pages > 0 ? ` · ${analysisMeta.pages} page${analysisMeta.pages > 1 ? 's' : ''}` : ''}
+                  </p>
+                </div>
+              )}
+
               {/* Project meta */}
               <div className="flex items-center gap-4 rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-3">
                 <Zap size={15} className="text-blue-500 flex-shrink-0" />
@@ -860,6 +973,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           </tr>
                         )
                       })}
+                      {milestones.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center">
+                            <p className="text-sm text-gray-400 font-medium">No milestones extracted from this document.</p>
+                            <p className="text-xs text-gray-400 mt-1">Click <span className="font-semibold text-blue-600">+ Add Milestone</span> to add them manually.</p>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -994,6 +1115,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           </tr>
                         )
                       })}
+                      {resources.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center">
+                            <p className="text-sm text-gray-400 font-medium">No roles extracted from this document.</p>
+                            <p className="text-xs text-gray-400 mt-1">Click <span className="font-semibold text-emerald-600">+ Add Resource</span> to add roles manually.</p>
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
