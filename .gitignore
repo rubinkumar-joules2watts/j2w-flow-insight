@@ -27,3 +27,5 @@ dist-ssr
 .env
 .claude
 .serena
+*.md
+!.Readme.md
