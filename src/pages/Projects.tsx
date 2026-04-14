@@ -177,6 +177,8 @@ const Projects = () => {
   const [timelineFilter, setTimelineFilter] = useState("all");
   const [documentFilter, setDocumentFilter] = useState("all");
   const [isAddingUpdate, setIsAddingUpdate] = useState(false);
+  const [isAssigningMember, setIsAssigningMember] = useState<string | null>(null);
+  const [isAddingHierarchyMember, setIsAddingHierarchyMember] = useState(false);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadingUpdateId, setUploadingUpdateId] = useState<string | null>(null);
@@ -506,12 +508,17 @@ const Projects = () => {
   };
 
   const handleAssignMember = async (memberId: string) => {
-    const { data, error } = await api.from("project_assignments").insert({ project_id: selectedId, team_member_id: memberId }).select().single();
-    if (error) { toast.error("Failed to assign"); return; }
-    await writeAuditLog("project_assignments", data.id, "INSERT", null, data);
-    qc.invalidateQueries({ queryKey: ["project_assignments"] });
-    toast.success(`✓ Member assigned · ${new Date().toLocaleTimeString()}`);
-    setShowAssignMember(false);
+    setIsAssigningMember(memberId);
+    try {
+      const { data, error } = await api.from("project_assignments").insert({ project_id: selectedId, team_member_id: memberId }).select().single();
+      if (error) { toast.error("Failed to assign"); return; }
+      await writeAuditLog("project_assignments", data.id, "INSERT", null, data);
+      qc.invalidateQueries({ queryKey: ["project_assignments"] });
+      toast.success(`✓ Member assigned · ${new Date().toLocaleTimeString()}`);
+      setShowAssignMember(false);
+    } finally {
+      setIsAssigningMember(null);
+    }
   };
 
   const handleRemoveMember = async (memberId: string) => {
@@ -561,34 +568,38 @@ const Projects = () => {
       color_hex: "#0EA5A6",
       is_active: true,
     };
+    setIsAddingHierarchyMember(true);
+    try {
+      const { data: member, error: memberError } = await api.from("team_members").insert(payload as any).select().single();
+      if (memberError || !member) {
+        toast.error("Failed to add person");
+        return;
+      }
 
-    const { data: member, error: memberError } = await api.from("team_members").insert(payload as any).select().single();
-    if (memberError || !member) {
-      toast.error("Failed to add person");
-      return;
+      const { data: assignment, error: assignmentError } = await api
+        .from("project_assignments")
+        .insert({ project_id: project.id, team_member_id: member.id } as any)
+        .select()
+        .single();
+
+      if (assignmentError) {
+        toast.error("Added person but failed to assign to project");
+        return;
+      }
+
+      await writeAuditLog("team_members", member.id, "INSERT", null, member);
+      await writeAuditLog("project_assignments", assignment.id, "INSERT", null, assignment);
+
+      qc.invalidateQueries({ queryKey: ["team_members"] });
+      qc.invalidateQueries({ queryKey: ["project_assignments"] });
+      qc.invalidateQueries({ queryKey: ["audit_log"] });
+
+      setShowAddHierarchyMember(false);
+      setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", resourceType: "Internal", vendor: "" });
+      toast.success(`✓ Added ${payload.name} to hierarchy · ${new Date().toLocaleTimeString()}`);
+    } finally {
+      setIsAddingHierarchyMember(false);
     }
-
-    const { data: assignment, error: assignmentError } = await api
-      .from("project_assignments")
-      .insert({ project_id: project.id, team_member_id: member.id } as any)
-      .select()
-      .single();
-
-    if (assignmentError) {
-      toast.error("Added person but failed to assign to project");
-      return;
-    }
-
-    await writeAuditLog("team_members", member.id, "INSERT", null, member);
-    await writeAuditLog("project_assignments", assignment.id, "INSERT", null, assignment);
-
-    qc.invalidateQueries({ queryKey: ["team_members"] });
-    qc.invalidateQueries({ queryKey: ["project_assignments"] });
-    qc.invalidateQueries({ queryKey: ["audit_log"] });
-
-    setShowAddHierarchyMember(false);
-    setNewHierarchyMember({ name: "", role: "Developer", reportsTo: "", resourceType: "Internal", vendor: "" });
-    toast.success(`✓ Added ${payload.name} to hierarchy · ${new Date().toLocaleTimeString()}`);
   };
 
   const handleAddUpdate = async () => {
@@ -987,22 +998,22 @@ const Projects = () => {
                         className="hover:text-blue-500 transition-colors cursor-text"
                         noTruncate={true}
                       />
-                      <div className="ml-4 flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 bg-blue-50/50 border border-blue-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Total Milestones">
-                          <Activity size={12} className="text-blue-500" />
-                          <span className="text-[10px] font-black text-blue-700">{projMilestones.length} <span className="font-bold text-blue-400 ml-0.5 uppercase tracking-tighter">Milestones</span></span>
+                      <div className="ml-4 flex items-center gap-1.5">
+                        <div className="flex items-center gap-1 bg-blue-600 border border-blue-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Total Milestones">
+                          <Activity size={11} className="text-white" />
+                          <span className="text-[10px] font-bold text-white">{projMilestones.length} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Milestones</span></span>
                         </div>
-                        <div className="flex items-center gap-1.5 bg-emerald-50/50 border border-emerald-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Completed Milestones">
-                          <CheckCircle size={12} className="text-emerald-500" />
-                          <span className="text-[10px] font-black text-emerald-700">{doneMilestones} <span className="font-bold text-emerald-400 ml-0.5 uppercase tracking-tighter">Done</span></span>
+                        <div className="flex items-center gap-1 bg-emerald-600 border border-emerald-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Completed Milestones">
+                          <CheckCircle size={11} className="text-white" />
+                          <span className="text-[10px] font-bold text-white">{doneMilestones} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Done</span></span>
                         </div>
-                        <div className="flex items-center gap-1.5 bg-amber-50/50 border border-amber-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Remaining Milestones">
-                          <Clock size={12} className="text-amber-500" />
-                          <span className="text-[10px] font-black text-amber-700">{projMilestones.length - doneMilestones} <span className="font-bold text-amber-400 ml-0.5 uppercase tracking-tighter">Left</span></span>
+                        <div className="flex items-center gap-1 bg-amber-600 border border-amber-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Remaining Milestones">
+                          <Clock size={11} className="text-white" />
+                          <span className="text-[10px] font-bold text-white">{projMilestones.length - doneMilestones} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Left</span></span>
                         </div>
-                        <div className="flex items-center gap-1.5 bg-violet-50/50 border border-violet-200/50 rounded-full px-2.5 py-1 whitespace-nowrap" title="Resources">
-                          <Users size={12} className="text-violet-500" />
-                          <span className="text-[10px] font-black text-violet-700">{assignedMembers.length} <span className="font-bold text-violet-400 ml-0.5 uppercase tracking-tighter">Team</span></span>
+                        <div className="flex items-center gap-1 bg-violet-600 border border-violet-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Resources">
+                          <Users size={11} className="text-white" />
+                          <span className="text-[10px] font-bold text-white">{assignedMembers.length} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Team</span></span>
                         </div>
                       </div>
                     </h2>
@@ -1014,31 +1025,28 @@ const Projects = () => {
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <EditableSelect value={project.service_type || ""} options={["Outcomes", "Governance"]} onSave={(v) => updateProject("service_type", v, project.service_type)} />
                     <EditableSelect value={project.revenue_model || ""} options={["Milestone", "Monthly", "Fixed"]} onSave={(v) => updateProject("revenue_model", v, project.revenue_model)} />
-                    <div className="relative inline-flex items-center rounded-full px-3 py-1 text-xs font-bold border transition-all" style={{
-                      backgroundColor: project.status === "On Track" ? "rgb(20 184 166 / 0.2)" :
-                        project.status === "At Risk" ? "rgb(251 146 60 / 0.2)" :
-                          project.status === "Blocked" ? "rgb(239 68 68 / 0.2)" :
-                            "rgb(59 130 246 / 0.2)",
-                      borderColor: project.status === "On Track" ? "rgb(20 184 166 / 0.3)" :
-                        project.status === "At Risk" ? "rgb(251 146 60 / 0.3)" :
-                          project.status === "Blocked" ? "rgb(239 68 68 / 0.3)" :
-                            "rgb(59 130 246 / 0.3)",
-                      color: project.status === "On Track" ? "rgb(16 185 129)" :
-                        project.status === "At Risk" ? "rgb(249 115 22)" :
-                          project.status === "Blocked" ? "rgb(239 68 68)" :
-                            "rgb(59 130 246)"
+                    <div className="relative inline-flex items-center rounded-full px-3 py-0.5 text-xs font-bold border transition-all min-w-[110px] justify-center shadow-sm" style={{
+                      backgroundColor: project.status === "On Track" ? "#10b981" :
+                        project.status === "At Risk" ? "#f59e0b" :
+                          project.status === "Blocked" ? "#ef4444" :
+                            "#3b82f6",
+                      borderColor: project.status === "On Track" ? "#059669" :
+                        project.status === "At Risk" ? "#d97706" :
+                          project.status === "Blocked" ? "#dc2626" :
+                            "#2563eb",
+                      color: "white"
                     }}>
                       <select
                         value={project.status || "On Track"}
                         onChange={(e) => updateProjectStatusViaAPI(e.target.value)}
-                        className="bg-transparent outline-none cursor-pointer appearance-none pr-4"
+                        className="bg-transparent outline-none cursor-pointer appearance-none pr-4 w-full text-center"
                       >
                         {["On Track", "At Risk", "Blocked", "Completed"].map((s) => (
                           <option key={s} value={s} className="bg-white text-gray-900">{s}</option>
                         ))}
                       </select>
-                      <ChevronDown size={10} className="absolute right-2 pointer-events-none" />
-                      {savedField === "proj-status" && <span className="absolute -top-4 left-0 text-[10px] text-emerald-500">Saved ✓</span>}
+                      <ChevronDown size={10} className="absolute right-2 pointer-events-none text-white" />
+                      {savedField === "proj-status" && <span className="absolute -top-4 left-0 text-[10px] text-emerald-500 font-bold">Saved ✓</span>}
                     </div>
                   </div>
                   <div className="mt-2.5 flex flex-wrap gap-x-8 gap-y-1 text-sm text-gray-800 font-bold">
@@ -1481,8 +1489,16 @@ const Projects = () => {
                       <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border border-gray-300 bg-gray-100/95 backdrop-blur p-1 shadow-lg">
                         {unassignedMembers.length === 0 && <p className="px-3 py-2 text-xs text-gray-500">All members assigned</p>}
                         {unassignedMembers.map((m) => (
-                          <button key={m.id} onClick={() => handleAssignMember(m.id)} className="w-full text-left rounded-md px-3 py-2 text-xs text-gray-900 hover:bg-gray-200 transition-colors">
-                            {m.name} · {m.role}
+                          <button
+                            key={m.id}
+                            onClick={() => handleAssignMember(m.id)}
+                            disabled={!!isAssigningMember}
+                            className="w-full text-left rounded-md px-3 py-2 text-xs text-gray-900 hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span>{m.name} · {m.role}</span>
+                              {isAssigningMember === m.id && <Loader2 size={12} className="animate-spin text-blue-500" />}
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -1920,6 +1936,7 @@ const Projects = () => {
             onSubmit={handleAddHierarchyMember}
             onCancel={() => setShowAddHierarchyMember(false)}
             submitLabel="Add Person"
+            isLoading={isAddingHierarchyMember}
           />
         </FormModal>
 
@@ -2168,7 +2185,7 @@ const EditableSelect = ({ value, options, onSave }: { value: string; options: st
   <select
     value={value}
     onChange={(e) => onSave(e.target.value)}
-    className="appearance-none rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground outline-none cursor-pointer hover:bg-muted transition-colors"
+    className="appearance-none rounded-full bg-secondary border border-gray-300 px-3 py-0.5 text-[10px] font-bold text-secondary-foreground outline-none cursor-pointer hover:bg-muted hover:border-gray-400 transition-all min-w-[110px] text-center shadow-sm"
   >
     {options.map((o) => <option key={o} value={o}>{o}</option>)}
   </select>
