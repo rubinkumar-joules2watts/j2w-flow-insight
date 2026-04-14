@@ -1596,39 +1596,46 @@ const Projects = () => {
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-gray-900 truncate tracking-tight">{m.name}</p>
                               </div>
-                              <InlineEdit
-                                value={m.role || ""}
-                                onSave={(v) => updateMemberField(m.id, "role", v, m.role)}
-                                savedKey={savedField === `${m.id}-role`}
-                                className="text-xs text-gray-600 font-medium"
-                              />
-                              <div className="relative">
-                                <select
-                                  value={m.resource_type || "Internal"}
-                                  onChange={(e) => updateMemberField(m.id, "resource_type", e.target.value, m.resource_type)}
-                                  className={`w-full appearance-none rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold outline-none hover:bg-white focus:ring-1 focus:ring-blue-500/30 transition-all ${m.resource_type === 'External' ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
-                                    m.resource_type === 'Consultant' ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                      "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    }`}
-                                >
-                                  <option value="Internal">Internal</option>
-                                  <option value="Consultant">Consultant</option>
-                                  <option value="External">External</option>
-                                </select>
-                                {savedField === `${m.id}-resource_type` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold">Saved ✓</span>}
+                              <div className="min-w-0">
+                                <InlineEdit
+                                  value={m.role || ""}
+                                  onSave={(v) => updateMemberField(m.id, "role", v, m.role)}
+                                  savedKey={savedField === `${m.id}-role`}
+                                  noTruncate={true}
+                                  className="text-xs text-gray-600 font-medium truncate"
+                                />
                               </div>
-                              <div className="relative">
-                                <select
-                                  value={reportsToId}
-                                  onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
-                                  className="w-full appearance-none rounded-lg border border-gray-300/80 bg-gray-50/50 px-2.5 py-1.5 text-xs font-medium text-gray-800 outline-none hover:border-blue-400 hover:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all"
-                                >
-                                  <option value="">Top Level</option>
-                                  {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
-                                    <option key={x.id} value={x.id}>{x.name}</option>
-                                  ))}
-                                </select>
-                                {savedField === `${m.id}-reports_to` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold whitespace-nowrap">Saved ✓</span>}
+                              <div className="min-w-0">
+                                <div className="relative">
+                                  <select
+                                    value={m.resource_type || "Internal"}
+                                    onChange={(e) => updateMemberField(m.id, "resource_type", e.target.value, m.resource_type)}
+                                    className={`w-full appearance-none rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold outline-none hover:bg-white focus:ring-1 focus:ring-blue-500/30 transition-all ${m.resource_type === 'External' ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                                      m.resource_type === 'Consultant' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                        "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      }`}
+                                  >
+                                    <option value="Internal">Internal</option>
+                                    <option value="Consultant">Consultant</option>
+                                    <option value="External">External</option>
+                                  </select>
+                                  {savedField === `${m.id}-resource_type` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold whitespace-nowrap">Saved ✓</span>}
+                                </div>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="relative">
+                                  <select
+                                    value={reportsToId}
+                                    onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
+                                    className="w-full appearance-none rounded-lg border border-gray-300/80 bg-gray-50/50 px-2.5 py-1.5 text-xs font-medium text-gray-800 outline-none hover:border-blue-400 hover:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all truncate"
+                                  >
+                                    <option value="">Top Level</option>
+                                    {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
+                                      <option key={x.id} value={x.id}>{x.name}</option>
+                                    ))}
+                                  </select>
+                                  {savedField === `${m.id}-reports_to` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold whitespace-nowrap">Saved ✓</span>}
+                                </div>
                               </div>
                               <div className="flex justify-center scale-110">
                                 <AllocationCell memberId={m.id} projectId={selectedId} />
