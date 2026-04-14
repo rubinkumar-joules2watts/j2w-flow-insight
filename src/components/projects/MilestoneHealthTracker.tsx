@@ -110,16 +110,21 @@ const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
     if (!onDelete) return;
-    if (!window.confirm("Are you sure you want to delete this status?")) return;
     setIsDeleting(true);
     try {
       await onDelete();
       onClose();
     } finally {
       setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -259,6 +264,32 @@ const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false
           </div>
         </div>
       </div>
+
+      {/* Custom Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Delete Status</h3>
+            <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete this milestone status for <span className="font-bold text-red-600">{milestone.milestone_code}</span>? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : "Delete Status"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -224,7 +224,7 @@ export const useDeleteMilestonePracticeStatus = () => {
   return {
     mutateAsync: async (payload: { milestoneId: string; weekNumber: number; projectId: string }) => {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}/api/milestones/${payload.milestoneId}/health/practice/week/${payload.weekNumber}`, {
+      const res = await fetch(`${baseUrl}api/milestones/${payload.milestoneId}/health/practice/week/${payload.weekNumber}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete milestone practice status");
