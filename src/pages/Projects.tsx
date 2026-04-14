@@ -1258,7 +1258,7 @@ const Projects = () => {
                                   </span>
                                 </div>
                               </div>
-                              <p className="text-xs text-foreground line-clamp-3 leading-relaxed mb-2">
+                              <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mb-2">
                                 {u.content}
                               </p>
 
