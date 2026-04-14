@@ -73,34 +73,44 @@ const AllocationCell = ({ memberId, projectId }: { memberId: string; projectId: 
   return (
     <div className="flex items-center gap-1">
       {isEditing ? (
-        <div className="flex items-center gap-1">
-          <input
-            type="text"
-            className="w-12 rounded border border-blue-300 bg-white px-1 py-0.5 text-[10px] outline-none focus:ring-1 focus:ring-blue-500"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSave()}
-            autoFocus
-          />
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="text-emerald-500 hover:text-emerald-600 transition-colors"
-          >
-            {isSaving ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
-          </button>
-          <button onClick={() => setIsEditing(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={12} />
-          </button>
+        <div className="flex items-center gap-1.5 p-1 bg-blue-50/50 rounded-lg border border-blue-100 shadow-sm ring-1 ring-blue-500/10">
+          <div className="relative">
+            <input
+              type="text"
+              className="w-14 rounded-md border border-blue-200 bg-white px-2 py-1 text-[11px] font-bold text-blue-700 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all text-center"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSave()}
+              autoFocus
+            />
+            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-[8px] text-blue-400 font-bold">%</span>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="p-1 rounded-md text-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+              title="Save"
+            >
+              {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+            </button>
+            <button
+              onClick={() => setIsEditing(false)}
+              className="p-1 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
+              title="Cancel"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
       ) : (
         <div
-          className="cursor-pointer rounded border border-transparent px-1 py-0.5 text-[10px] font-bold text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center gap-0.5"
+          className="cursor-pointer rounded-lg border border-transparent px-2 py-1 text-xs font-extrabold text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center gap-1"
           onClick={() => setIsEditing(true)}
           title="Click to edit allocation %"
         >
-          <Clock size={10} className="text-gray-400" />
-          {engagement?.engagement_level || "0"}%
+          <Clock size={12} className="text-blue-400" />
+          <span>{engagement?.engagement_level || "0"}%</span>
         </div>
       )}
     </div>
@@ -114,8 +124,8 @@ const Projects = () => {
   const { data: clients } = useClients();
   const { data: projects } = useProjects();
   const { data: milestones } = useMilestones();
-  const { data: members, isLoading: membersLoading } = useTeamMembers();
-  const { data: assignments } = useAssignments();
+  const { data: members, isLoading: membersLoading, isFetching: membersFetching } = useTeamMembers();
+  const { data: assignments, isLoading: assignmentsLoading, isFetching: assignmentsFetching } = useAssignments();
   const { data: auditLog } = useAuditLog();
   const { data: allUpdates = [] } = useProjectUpdates();
   const { data: projDocs = [] } = useProjectDocuments();
@@ -540,7 +550,7 @@ const Projects = () => {
     return byName?.id || null;
   };
 
-  const updateMemberField = useCallback(async (memberId: string, field: "role" | "reports_to", value: string | null, oldVal: unknown) => {
+  const updateMemberField = useCallback(async (memberId: string, field: "role" | "reports_to" | "resource_type", value: string | null, oldVal: unknown) => {
     const { error } = await api.from("team_members").update({ [field]: value } as any).eq("id", memberId);
     if (error) { toast.error("Failed to update member"); return; }
     await writeAuditLog("team_members", memberId, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
@@ -1001,19 +1011,19 @@ const Projects = () => {
                       <div className="ml-4 flex items-center gap-1.5">
                         <div className="flex items-center gap-1 bg-blue-600 border border-blue-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Total Milestones">
                           <Activity size={11} className="text-white" />
-                          <span className="text-[10px] font-bold text-white">{projMilestones.length} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Milestones</span></span>
+                          <span className="text-xs font-bold text-white">{projMilestones.length} <span className="font-extrabold ml-0.5 uppercase tracking-tighter">Milestones</span></span>
                         </div>
                         <div className="flex items-center gap-1 bg-emerald-600 border border-emerald-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Completed Milestones">
                           <CheckCircle size={11} className="text-white" />
-                          <span className="text-[10px] font-bold text-white">{doneMilestones} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Done</span></span>
+                          <span className="text-xs font-bold text-white">{doneMilestones} <span className="font-extrabold ml-0.5 uppercase tracking-tighter">Done</span></span>
                         </div>
                         <div className="flex items-center gap-1 bg-amber-600 border border-amber-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Remaining Milestones">
                           <Clock size={11} className="text-white" />
-                          <span className="text-[10px] font-bold text-white">{projMilestones.length - doneMilestones} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Left</span></span>
+                          <span className="text-xs font-bold text-white">{projMilestones.length - doneMilestones} <span className="font-extrabold ml-0.5 uppercase tracking-tighter">Left</span></span>
                         </div>
                         <div className="flex items-center gap-1 bg-violet-600 border border-violet-700 rounded-full px-2.5 py-0.5 whitespace-nowrap min-w-[110px] justify-center shadow-sm" title="Resources">
                           <Users size={11} className="text-white" />
-                          <span className="text-[10px] font-bold text-white">{assignedMembers.length} <span className="font-medium opacity-80 ml-0.5 uppercase tracking-tighter">Team</span></span>
+                          <span className="text-xs font-bold text-white">{assignedMembers.length} <span className="font-extrabold ml-0.5 uppercase tracking-tighter">Team</span></span>
                         </div>
                       </div>
                     </h2>
@@ -1562,41 +1572,71 @@ const Projects = () => {
                       <span className="text-[10px] bg-gray-100/50 text-gray-500 border border-gray-300 px-2 py-0.5 rounded-full font-bold">Config</span>
                     </div>
                     <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                      <div className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] gap-2 px-3 py-1 mb-1">
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Resource</span>
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Role</span>
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Reports To</span>
-                        <span className="text-[10px] uppercase font-bold text-gray-400">Alloc %</span>
+                      <div className="grid grid-cols-[1.4fr_1.1fr_0.8fr_1.1fr_0.8fr] gap-4 px-4 py-2 mb-2 border-b border-gray-200">
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Resource</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Role</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Type</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Reports To</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider text-center">Alloc %</span>
                       </div>
-                      {assignedMembers.map((m) => {
-                        const reportsToId = resolveReportsToId(m.reports_to) || "";
-                        return (
-                          <div key={m.id} className="grid grid-cols-[1.2fr_1fr_1fr_0.8fr] items-center gap-2 rounded-md border border-gray-300/50 bg-gray-100/30 px-3 py-2 hover:bg-gray-100/50 transition-colors">
-                            <div className="min-w-0">
-                              <p className="text-xs font-medium text-gray-900 truncate">{m.name}</p>
+                      {membersLoading || assignmentsLoading || membersFetching || assignmentsFetching ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3 bg-gray-50/30 rounded-xl border border-dashed border-gray-300">
+                          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                          <span className="text-[10px] uppercase font-bold text-gray-400 tracking-widest">Loading Resources...</span>
+                        </div>
+                      ) : assignedMembers.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-2 bg-gray-50/30 rounded-xl border border-dashed border-gray-300">
+                          <p className="text-xs text-gray-500 font-medium">No team members assigned</p>
+                        </div>
+                      ) : (
+                        assignedMembers.map((m) => {
+                          const reportsToId = resolveReportsToId(m.reports_to) || "";
+                          return (
+                            <div key={m.id} className="grid grid-cols-[1.4fr_1.1fr_0.8fr_1.1fr_0.8fr] items-center gap-4 rounded-xl border border-gray-300/40 bg-white/50 px-4 py-3 hover:bg-white hover:border-blue-300 hover:shadow-md transition-all duration-200">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-gray-900 truncate tracking-tight">{m.name}</p>
+                              </div>
+                              <InlineEdit
+                                value={m.role || ""}
+                                onSave={(v) => updateMemberField(m.id, "role", v, m.role)}
+                                savedKey={savedField === `${m.id}-role`}
+                                className="text-xs text-gray-600 font-medium"
+                              />
+                              <div className="relative">
+                                <select
+                                  value={m.resource_type || "Internal"}
+                                  onChange={(e) => updateMemberField(m.id, "resource_type", e.target.value, m.resource_type)}
+                                  className={`w-full appearance-none rounded-lg border px-2.5 py-1.5 text-[10px] font-extrabold outline-none hover:bg-white focus:ring-1 focus:ring-blue-500/30 transition-all ${m.resource_type === 'External' ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                                    m.resource_type === 'Consultant' ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                      "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    }`}
+                                >
+                                  <option value="Internal">Internal</option>
+                                  <option value="Consultant">Consultant</option>
+                                  <option value="External">External</option>
+                                </select>
+                                {savedField === `${m.id}-resource_type` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold">Saved ✓</span>}
+                              </div>
+                              <div className="relative">
+                                <select
+                                  value={reportsToId}
+                                  onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
+                                  className="w-full appearance-none rounded-lg border border-gray-300/80 bg-gray-50/50 px-2.5 py-1.5 text-xs font-medium text-gray-800 outline-none hover:border-blue-400 hover:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 transition-all"
+                                >
+                                  <option value="">Top Level</option>
+                                  {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
+                                    <option key={x.id} value={x.id}>{x.name}</option>
+                                  ))}
+                                </select>
+                                {savedField === `${m.id}-reports_to` && <span className="absolute -bottom-4 left-0 text-[8px] text-emerald-500 font-bold whitespace-nowrap">Saved ✓</span>}
+                              </div>
+                              <div className="flex justify-center scale-110">
+                                <AllocationCell memberId={m.id} projectId={selectedId} />
+                              </div>
                             </div>
-                            <InlineEdit
-                              value={m.role || ""}
-                              onSave={(v) => updateMemberField(m.id, "role", v, m.role)}
-                              savedKey={savedField === `${m.id}-role`}
-                            />
-                            <div className="relative">
-                              <select
-                                value={reportsToId}
-                                onChange={(e) => updateMemberField(m.id, "reports_to", e.target.value || null, m.reports_to)}
-                                className="w-full appearance-none rounded-md border border-gray-300 bg-gray-100 px-2 py-1 text-xs text-gray-900 outline-none hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30"
-                              >
-                                <option value="">Top Level</option>
-                                {assignedMembers.filter((x) => x.id !== m.id).map((x) => (
-                                  <option key={x.id} value={x.id}>{x.name}</option>
-                                ))}
-                              </select>
-                              {savedField === `${m.id}-reports_to` && <span className="absolute -top-4 left-0 text-[10px] text-emerald-400">Saved ✓</span>}
-                            </div>
-                            <AllocationCell memberId={m.id} projectId={selectedId} />
-                          </div>
-                        );
-                      })}
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>
