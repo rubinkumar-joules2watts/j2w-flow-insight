@@ -219,3 +219,18 @@ export const useUpdateEngagement = () => {
     }
   };
 };
+export const useDeleteMilestonePracticeStatus = () => {
+  const qc = useQueryClient();
+  return {
+    mutateAsync: async (payload: { milestoneId: string; weekNumber: number; projectId: string }) => {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
+      const res = await fetch(`${baseUrl}/api/milestones/${payload.milestoneId}/health/practice/week/${payload.weekNumber}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete milestone practice status");
+      const data = await res.json();
+      qc.invalidateQueries({ queryKey: ["milestone_health", payload.projectId] });
+      return data;
+    }
+  };
+};

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MilestoneHealthData, MilestoneHealthPhase, WeekData, Milestone } from "@/hooks/useData";
-import { Loader2, Pencil, Plus as PlusIcon } from "lucide-react";
+import { MilestoneHealthData, MilestoneHealthPhase, WeekData, Milestone, useDeleteMilestonePracticeStatus } from "@/hooks/useData";
+import { Loader2, Pencil, Plus as PlusIcon, Trash2 } from "lucide-react";
 
 interface MilestoneHealthTrackerProps {
   data?: MilestoneHealthData;
@@ -90,9 +90,10 @@ interface StatusEditorModalProps {
   isEmpty?: boolean;
   onClose: () => void;
   onSave: (updates: Record<string, unknown>) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }
 
-const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false, onClose, onSave }: StatusEditorModalProps) => {
+const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false, onClose, onSave, onDelete }: StatusEditorModalProps) => {
   const [selectedStatus, setSelectedStatus] = useState(
     isEmpty
       ? type === "practice"
@@ -108,6 +109,19 @@ const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false
     type === "signoff" && milestone.date ? milestone.date.split("T")[0] : type === "invoice" && milestone.date ? milestone.date.split("T")[0] : new Date().toISOString().split("T")[0]
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    if (!window.confirm("Are you sure you want to delete this status?")) return;
+    setIsDeleting(true);
+    try {
+      await onDelete();
+      onClose();
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -214,21 +228,35 @@ const StatusEditorModal = ({ isOpen, milestone, type, weekLabel, isEmpty = false
         </div>
 
         {/* Footer */}
-        <div className="flex gap-2 justify-end mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
-            disabled={isSaving}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50"
-            disabled={isSaving}
-          >
-            {isSaving ? "Saving..." : isEmpty ? "Add" : "Update"}
-          </button>
+        <div className="flex gap-2 justify-between mt-6">
+          <div>
+            {!isEmpty && type === "practice" && onDelete && (
+              <button
+                onClick={handleDelete}
+                className="px-4 py-2 text-sm font-medium text-red-600 bg-red-50 rounded-md hover:bg-red-100 flex items-center gap-2 disabled:opacity-50"
+                disabled={isSaving || isDeleting}
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Delete Status
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
+              disabled={isSaving || isDeleting}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-md hover:bg-blue-600 disabled:opacity-50"
+              disabled={isSaving || isDeleting}
+            >
+              {isSaving ? "Saving..." : isEmpty ? "Add" : "Update"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -368,6 +396,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
   const qc = useQueryClient();
   const [modalState, setModalState] = useState<ModalState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const { mutateAsync: deleteStatus } = useDeleteMilestonePracticeStatus();
 
   if (loading) {
     return (
@@ -479,6 +508,21 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       alert(`Error updating: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!modalState || modalState.weekNumber === undefined || !data?.project_id) return;
+    try {
+      await deleteStatus({
+        milestoneId: modalState.milestoneId,
+        weekNumber: modalState.weekNumber,
+        projectId: data.project_id
+      });
+      handleModalClose();
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert(`Error deleting: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   };
 
@@ -827,13 +871,14 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       {/* Status Editor Modal */}
       {modalState && (
         <StatusEditorModal
-          isOpen={modalState.isOpen}
-          milestone={modalState.milestone}
-          type={modalState.type}
-          weekLabel={modalState.weekLabel}
-          isEmpty={modalState.isEmpty}
+          isOpen={!!modalState}
+          type={modalState?.type || "practice"}
+          milestone={modalState?.milestone || {} as MilestoneHealthPhase}
+          weekLabel={modalState?.weekLabel}
+          isEmpty={modalState?.isEmpty || false}
           onClose={handleModalClose}
           onSave={handleSave}
+          onDelete={modalState?.type === "practice" && !modalState?.isEmpty ? handleDelete : undefined}
         />
       )}
     </div>
