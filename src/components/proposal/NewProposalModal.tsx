@@ -1,10 +1,11 @@
-import { useState, useRef, useMemo, type ReactNode } from 'react'
+import { useState, useRef, useMemo, useEffect, type ReactNode } from 'react'
 import {
   X, Upload, FileText, Plus, Trash2, Search, ChevronRight, ChevronLeft,
   Check, AlertTriangle, Building2, Zap, Calendar, Users, CheckCircle2,
   HelpCircle, ChevronDown, ExternalLink, Edit2, Pencil
 } from 'lucide-react'
 import { extractProposalDocument, type ExtractedProposalResponse } from '@/lib/proposalExtractionApi'
+import { searchResources, autoAllocateResources, type ResourceSearchMember, type ActiveProject } from '@/lib/resourceSearchApi'
 import internalData from '../../data/internal_data.js'
 import externalData from '../../data/external_data.js'
 
@@ -187,10 +188,7 @@ function getTbdReason(alloc: AllocResult, res: ResourceRow): string {
     return `${names} cover ${alloc.requiredBW - alloc.tbdBW}% — remaining ${alloc.tbdBW}% needs support`
   }
   if (alloc.tbdBW === 0) return `Resource requirements fully met for this role`
-  const employees: any[] = (internalData as any).employees
-  const hasSkillMatch = employees.some(emp => scoreEmployee(emp, res.skills).score >= 30)
-  if (!hasSkillMatch) return `No internal fit found for ${res.role}`
-  return `Internal resources are at capacity for the requested project timeline`
+  return `No internal fit found with sufficient availability for ${res.role}`
 }
 
 function getAllocationState(alloc: AllocResult): 'matched' | 'partial' | 'open' {
@@ -247,16 +245,21 @@ function runAutoAlloc(resources: ResourceRow[]): AllocResult[] {
 
 // ─── EmpCard ─────────────────────────────────────────────────────────────────
 
-function EmpCard({ emp, score, matched, partial, avail, assignAction }: {
-  emp: any; score: number; matched: string[]; partial: string[]; avail: number; assignAction?: ReactNode
+function EmpCard({ member, assignAction }: {
+  member: ResourceSearchMember
+  assignAction?: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
-  const allSkills: string[] = (emp.Skills || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  const score = member.composite_score
+  const matched = member.matched_skills
+  const partial = member.partial_skills
+  const avail = member.available_bandwidth
+  const allSkills = member.skills
   const bwColor = avail >= 60 ? 'bg-emerald-500' : avail >= 30 ? 'bg-amber-500' : 'bg-red-400'
   const scoreCls = score >= 75 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
     : score >= 50 ? 'text-amber-700 bg-amber-50 border-amber-200'
       : 'text-orange-700 bg-orange-50 border-orange-200'
-  const initials = emp.Name.split(' ').slice(0, 2).map((n: string) => n[0]).join('')
+  const initials = member.initials || member.name.split(' ').slice(0, 2).map(n => n[0]).join('')
 
   return (
     <div className={`rounded-xl border transition-all group/emp ${expanded ? 'border-blue-200 shadow-sm' : 'border-gray-100 hover:border-gray-200'} bg-white`}>
@@ -266,10 +269,15 @@ function EmpCard({ emp, score, matched, partial, avail, assignAction }: {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-gray-900 truncate">{emp.Name}</p>
+            <p className="text-sm font-bold text-gray-900 truncate">{member.name}</p>
             <span className={`text-sm font-bold rounded-full border px-2.5 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
+            {member.skill_score > 0 && (
+              <span className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
+                {member.skill_score}% skills · {Math.round(avail)}% free
+              </span>
+            )}
           </div>
-          <p className="text-sm font-medium text-gray-700 truncate">{emp.Role}</p>
+          <p className="text-sm font-medium text-gray-700 truncate">{member.role}</p>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0 min-w-[160px]">
           <div className="w-36">
@@ -290,36 +298,65 @@ function EmpCard({ emp, score, matched, partial, avail, assignAction }: {
 
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">Current Projects</p>
-              <p className="text-gray-600 leading-relaxed">{emp['Current Projects'] || '—'}</p>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">Timeline Availability</p>
-              <p className={avail > 50 ? 'text-emerald-600 font-semibold' : avail > 20 ? 'text-amber-600 font-semibold' : 'text-red-500 font-semibold'}>
-                {avail > 50 ? '✅ Fully available' : avail > 20 ? '⚠️ Limited capacity' : '❌ Near full capacity'}
-              </p>
-            </div>
-          </div>
+          {/* Active project allocations */}
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">Skills</p>
-            <div className="flex flex-wrap gap-1">
-              {allSkills.map((skill: string) => {
-                const sl = skill.toLowerCase()
-                const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
-                const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
-                return (
-                  <span key={skill} className={`text-sm font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
-                      isPartial ? 'bg-amber-50 text-amber-600' :
-                        'bg-gray-100 text-gray-500'
-                    }`}>
-                    {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
-                  </span>
-                )
-              })}
-            </div>
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+              Active Project Allocations
+              {member.active_projects.length > 0 && (
+                <span className="ml-1.5 text-xs font-semibold text-gray-400 normal-case">({member.committed_bandwidth}% total committed)</span>
+              )}
+            </p>
+            {member.active_projects.length === 0 ? (
+              <p className="text-sm text-emerald-600 font-semibold">✅ No active commitments — fully available</p>
+            ) : (
+              <div className="space-y-1.5">
+                {member.active_projects.map((proj: ActiveProject) => (
+                  <div key={proj.project_id} className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-800 truncate">{proj.project_name || proj.project_id}</p>
+                      {(proj.start_date || proj.end_date) && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {proj.start_date ? fmtDate(proj.start_date) : '?'} → {proj.end_date ? fmtDate(proj.end_date) : 'Ongoing'}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex-shrink-0 ml-3 text-right">
+                      <span className="text-sm font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2.5 py-0.5">
+                        {proj.engagement_level}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <div className={`text-xs font-semibold ${avail > 50 ? 'text-emerald-600' : avail > 20 ? 'text-amber-600' : 'text-red-500'}`}>
+                    {avail > 50 ? '✅ Fully available' : avail > 20 ? '⚠️ Limited capacity' : '❌ Near full capacity'} · {avail}% free
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Skills */}
+          {allSkills.length > 0 && (
+            <div>
+              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">Skills</p>
+              <div className="flex flex-wrap gap-1">
+                {allSkills.map((skill: string) => {
+                  const sl = skill.toLowerCase()
+                  const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
+                  const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
+                  return (
+                    <span key={skill} className={`text-sm font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
+                        isPartial ? 'bg-amber-50 text-amber-600' :
+                          'bg-gray-100 text-gray-500'
+                      }`}>
+                      {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -522,6 +559,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const [extractWarnings, setExtractWarnings] = useState<string[]>([])
   const [extractError, setExtractError] = useState<string | null>(null)
   const [analysisMeta, setAnalysisMeta] = useState<{ processingMs: number; pages: number } | null>(null)
+  const [memberSearchResults, setMemberSearchResults] = useState<ResourceSearchMember[]>([])
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false)
+  const [refinementResults, setRefinementResults] = useState<ResourceSearchMember[]>([])
+  const [refinementLoading, setRefinementLoading] = useState(false)
+  const [allocLoading, setAllocLoading] = useState(false)
 
   const handleClose = () => {
     setStep('choose'); setFileName(''); setProjectName(''); setClient('')
@@ -531,6 +573,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     setEditingMilestoneId(null); setEditingResourceId(null)
     setSelectedAllocId(null); setSearchTab('Internal Team')
     setExtractWarnings([]); setExtractError(null); setAnalysisMeta(null)
+    setMemberSearchResults([]); setMemberSearchLoading(false)
+    setRefinementResults([]); setRefinementLoading(false)
+    setAllocLoading(false)
     onClose()
   }
 
@@ -567,6 +612,45 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       setStep('s1')
     }
   }
+
+  // ── Resource search: fetch from backend when step 2 resource slot changes ──
+  useEffect(() => {
+    if (step !== 's2') return
+    const res = resources[selectedResIdx]
+    if (!res) return
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    setMemberSearchLoading(true)
+    setMemberSearchResults([])
+    searchResources({
+      role: res.role,
+      skills: res.skills,
+      bandwidth_needed: res.bandwidth,
+      project_start: projectStart,
+      project_end: projectEnd,
+    }).then(data => setMemberSearchResults(data.members))
+      .catch(() => setMemberSearchResults([]))
+      .finally(() => setMemberSearchLoading(false))
+  }, [step, selectedResIdx])
+
+  // ── Refinement: fetch from backend when step 3 slot selection changes ──
+  useEffect(() => {
+    if (step !== 's3' || !selectedAllocId) return
+    const res = resources.find(r => r.id === selectedAllocId)
+    if (!res) return
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    setRefinementLoading(true)
+    searchResources({
+      role: res.role,
+      skills: res.skills,
+      bandwidth_needed: res.bandwidth,
+      project_start: projectStart,
+      project_end: projectEnd,
+    }).then(data => setRefinementResults(data.members))
+      .catch(() => setRefinementResults([]))
+      .finally(() => setRefinementLoading(false))
+  }, [step, selectedAllocId])
 
   const updateMilestone = (idx: number, field: keyof MilestoneRow, value: string) => {
     setMilestones(prev => {
@@ -626,59 +710,78 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
   const selectedRes = resources[selectedResIdx]
 
-  const effectiveTerms = useMemo(() => {
-    if (skillSearch) return [skillSearch.toLowerCase()]
-    if (activeSkillChip) return [activeSkillChip.toLowerCase()]
-    return (selectedRes?.skills || []).map((s: string) => s.toLowerCase())
-  }, [skillSearch, activeSkillChip, selectedRes])
-
-  const filteredEmps = useMemo(() => {
-    const employees: any[] = (internalData as any).employees
-    if (!effectiveTerms.length) return employees
-    return employees.filter((emp: any) =>
-      effectiveTerms.some(term =>
-        (emp['Skills'] || '').toLowerCase().includes(term) ||
-        (emp['Role'] || '').toLowerCase().includes(term)
-      )
+  // Only filter on explicit user input — backend already scores relevance
+  const filteredMembers = useMemo(() => {
+    const term = skillSearch
+      ? skillSearch.toLowerCase()
+      : activeSkillChip
+        ? activeSkillChip.toLowerCase()
+        : ''
+    if (!term) return memberSearchResults
+    return memberSearchResults.filter(m =>
+      m.skills.some(s => s.toLowerCase().includes(term)) ||
+      (m.role || '').toLowerCase().includes(term) ||
+      (m.name || '').toLowerCase().includes(term)
     )
-  }, [effectiveTerms])
+  }, [memberSearchResults, skillSearch, activeSkillChip])
 
-  const proceedToStep3 = () => {
-    const fresh = runAutoAlloc(resources)
-    setAllocations(fresh)
+  const proceedToStep3 = async () => {
+    setAllocLoading(true)
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    try {
+      const result = await autoAllocateResources({
+        resources: resources.map(r => ({ id: r.id, role: r.role, skills: r.skills, bandwidth: r.bandwidth })),
+        project_start: projectStart,
+        project_end: projectEnd,
+      })
+      const allocs = result.map(r => ({
+        resourceId: r.resourceId,
+        role: r.role,
+        requiredBW: r.requiredBW,
+        tbdBW: r.tbdBW,
+        status: r.status,
+        assignments: r.assignments.map(a => ({
+          type: a.type as 'internal',
+          id: a.id,
+          name: a.name,
+          subText: a.role || 'Professional Services',
+          bw: a.bw,
+          score: a.score,
+        })),
+      }))
+      setAllocations(allocs)
+      setSelectedAllocId(allocs[0]?.resourceId || null)
+    } catch {
+      // Fallback to client-side allocation if backend unavailable
+      const fresh = runAutoAlloc(resources)
+      setAllocations(fresh)
+      setSelectedAllocId(fresh[0]?.resourceId || null)
+    } finally {
+      setAllocLoading(false)
+    }
     setTbdAssigned({})
-    setSelectedAllocId(fresh[0]?.resourceId || null)
     setSearchTab('Internal Team')
     setStep('s3')
   }
 
-  const assignInternalS3 = (resourceId: string, emp: any) => {
+  const assignInternalS3 = (resourceId: string, member: ResourceSearchMember) => {
     setAllocations(prev => prev.map(a => {
       if (a.resourceId !== resourceId) return a
       if (a.tbdBW <= 0) return a
-      
-      const skills = resources.find(r => r.id === resourceId)?.skills || []
-      const { score } = scoreEmployee(emp, skills)
-      const avail = estAvailBW(emp, {}) 
-      const allocBW = Math.min(avail, a.tbdBW)
-      
+
+      const allocBW = Math.min(member.available_bandwidth, a.tbdBW)
       const newAssign: Assignment = {
         type: 'internal',
-        id: String(emp.ID),
-        name: emp.Name,
-        subText: emp.Department || 'Professional Services',
+        id: member.id,
+        name: member.name,
+        subText: member.role || 'Professional Services',
         bw: allocBW,
-        score
+        score: member.composite_score,
       }
-
-      const updated = [...a.assignments, newAssign].sort((a, b) => b.bw - a.bw)
+      const updated = [...a.assignments, newAssign].sort((x, y) => y.bw - x.bw)
       const newTbd = Math.max(0, a.tbdBW - allocBW)
-      return {
-        ...a,
-        assignments: updated,
-        tbdBW: newTbd,
-        status: newTbd <= 0 ? 'matched' : 'partial'
-      }
+      return { ...a, assignments: updated, tbdBW: newTbd, status: newTbd <= 0 ? 'matched' : 'partial' }
     }))
   }
 
@@ -1228,22 +1331,26 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       </div>
                     </div>
                     <div className="px-5 py-2 bg-blue-50/50 border-b border-blue-100 text-sm text-blue-700 font-semibold">
-                      Showing {filteredEmps.length} team member{filteredEmps.length !== 1 ? 's' : ''} · Bandwidth shows estimated availability after current project allocations
+                      {memberSearchLoading
+                        ? 'Searching team members…'
+                        : `Showing ${filteredMembers.length} relevant member${filteredMembers.length !== 1 ? 's' : ''} · Score = 60% skills + 30% role match + 10% availability`}
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                      {filteredEmps.length === 0 ? (
+                      {memberSearchLoading ? (
+                        <div className="flex flex-col items-center justify-center h-44 text-gray-400">
+                          <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mb-3" />
+                          <p className="text-sm font-medium">Fetching available team members…</p>
+                        </div>
+                      ) : filteredMembers.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-44 text-gray-400">
                           <Search size={26} className="mb-2 opacity-30" />
                           <p className="text-sm font-medium">No matching team members</p>
                           <p className="text-xs mt-1 opacity-60">Try a different skill or clear the filter</p>
                         </div>
                       ) : (
-                        filteredEmps.map((emp: any) => {
-                          const { score, matched, partial } = scoreEmployee(emp, selectedRes.skills)
-                          return (
-                            <EmpCard key={emp.ID} emp={emp} score={score} matched={matched} partial={partial} avail={estAvailBW(emp, {})} />
-                          )
-                        })
+                        filteredMembers.map(member => (
+                          <EmpCard key={member.id} member={member} />
+                        ))
                       )}
                     </div>
                   </>
@@ -1505,18 +1612,17 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       )
                       const res = resources.find(r => r.id === selectedAllocId)!
 
-                      // Scorers
-                      const internalCands = (internalData as any).employees
-                        .map((emp: any) => ({ emp, ...scoreEmployee(emp, res.skills), avail: estAvailBW(emp, {}) }))
-                        .filter((c: any) => c.score >= 10 && c.avail > 0)
-                        .sort((a: any, b: any) => b.score - a.score)
+                      // Internal candidates come from backend; external stay static
+                      const internalCands = refinementResults.filter(m => m.composite_score >= 10 || m.available_bandwidth > 0)
 
                       const extAll = (externalData as any).companies
                         .map((c: any) => ({ c, ...scoreExternal(c, res.skills) }))
                         .filter((x: any) => x.score >= 10)
                         .sort((a: any, b: any) => b.score - a.score)
 
-                      const activeList = searchTab === 'Internal Team' ? internalCands : extAll.filter(x => (x.c.Type || 'External Partner') === searchTab)
+                      const activeList = searchTab === 'Internal Team'
+                        ? internalCands
+                        : extAll.filter((x: any) => (x.c.Type || 'External Partner') === searchTab)
 
                       return (
                         <>
@@ -1539,9 +1645,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                             {/* Triple Tabs */}
                             <div className="flex gap-6">
                               {[
-                                { id: 'Internal Team', label: 'Internal Team', count: internalCands.length },
-                                { id: 'External Consultant', label: 'Consultants', count: extAll.filter(x => x.c.Type === 'External Consultant').length },
-                                { id: 'External Partner', label: 'Partners', count: extAll.filter(x => (x.c.Type || 'External Partner') === 'External Partner').length }
+                                { id: 'Internal Team', label: 'Internal Team', count: refinementLoading ? '…' : internalCands.length },
+                                { id: 'External Consultant', label: 'Consultants', count: extAll.filter((x: any) => x.c.Type === 'External Consultant').length },
+                                { id: 'External Partner', label: 'Partners', count: extAll.filter((x: any) => (x.c.Type || 'External Partner') === 'External Partner').length }
                               ].map(t => (
                                 <button key={t.id} onClick={() => setSearchTab(t.id as any)}
                                   className={`relative py-3.5 text-sm font-bold transition-all ${searchTab === t.id ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -1556,7 +1662,12 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           </div>
 
                           <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-gray-50/20">
-                            {activeList.length === 0 ? (
+                            {searchTab === 'Internal Team' && refinementLoading ? (
+                              <div className="flex flex-col items-center justify-center h-48 text-gray-400 opacity-60">
+                                <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mb-3" />
+                                <p className="text-sm font-medium">Loading team members…</p>
+                              </div>
+                            ) : activeList.length === 0 ? (
                               <div className="flex flex-col items-center justify-center h-48 text-gray-400 opacity-60">
                                 <Search size={32} className="mb-2" />
                                 <p className="text-sm font-medium">No matches in {searchTab}</p>
@@ -1565,15 +1676,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                               activeList.map((cand: any) => (
                                 searchTab === 'Internal Team' ? (
                                   <EmpCard
-                                    key={cand.emp.ID}
-                                    emp={cand.emp}
-                                    score={cand.score}
-                                    matched={cand.matched}
-                                    partial={cand.partial}
-                                    avail={cand.avail}
+                                    key={(cand as ResourceSearchMember).id}
+                                    member={cand as ResourceSearchMember}
                                     assignAction={
                                       <button
-                                        onClick={() => assignInternalS3(selectedAllocId!, cand.emp)}
+                                        onClick={() => assignInternalS3(selectedAllocId!, cand as ResourceSearchMember)}
                                         className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm"
                                       >
                                         Assign
@@ -1659,9 +1766,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 </button>
               )}
               {step === 's2' && (
-                <button onClick={proceedToStep3}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
-                  <Zap size={14} /> Run Auto Allocation
+                <button onClick={proceedToStep3} disabled={allocLoading}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
+                  {allocLoading
+                    ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Allocating…</>
+                    : <><Zap size={14} /> Run Auto Allocation</>}
                 </button>
               )}
               {step === 's3' && (
