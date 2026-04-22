@@ -1,10 +1,12 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect, type ReactNode } from 'react'
 import {
   X, Upload, FileText, Plus, Trash2, Search, ChevronRight, ChevronLeft,
   Check, AlertTriangle, Building2, Zap, Calendar, Users, CheckCircle2,
-  HelpCircle, ChevronDown, ChevronUp, ExternalLink, Edit2, Pencil
+  HelpCircle, ChevronDown, ExternalLink, Edit2, Pencil
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { extractProposalDocument, type ExtractedProposalResponse } from '@/lib/proposalExtractionApi'
+import { searchResources, autoAllocateResources, type ResourceSearchMember, type ActiveProject } from '@/lib/resourceSearchApi'
 import internalData from '../../data/internal_data.js'
 import externalData from '../../data/external_data.js'
 
@@ -187,10 +189,18 @@ function getTbdReason(alloc: AllocResult, res: ResourceRow): string {
     return `${names} cover ${alloc.requiredBW - alloc.tbdBW}% — remaining ${alloc.tbdBW}% needs support`
   }
   if (alloc.tbdBW === 0) return `Resource requirements fully met for this role`
-  const employees: any[] = (internalData as any).employees
-  const hasSkillMatch = employees.some(emp => scoreEmployee(emp, res.skills).score >= 30)
-  if (!hasSkillMatch) return `No internal fit found for ${res.role}`
-  return `Internal resources are at capacity for the requested project timeline`
+  return `No internal fit found with sufficient availability for ${res.role}`
+}
+
+function getAllocationState(alloc: AllocResult): 'matched' | 'partial' | 'open' {
+  if (alloc.tbdBW <= 0) return 'matched'
+  if (alloc.assignments.length > 0) return 'partial'
+  return 'open'
+}
+
+function getCoveragePct(alloc: AllocResult): number {
+  if (alloc.requiredBW <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round(((alloc.requiredBW - alloc.tbdBW) / alloc.requiredBW) * 100)))
 }
 
 function runAutoAlloc(resources: ResourceRow[]): AllocResult[] {
@@ -236,76 +246,100 @@ function runAutoAlloc(resources: ResourceRow[]): AllocResult[] {
 
 // ─── EmpCard ─────────────────────────────────────────────────────────────────
 
-function EmpCard({ emp, score, matched, partial, avail }: {
-  emp: any; score: number; matched: string[]; partial: string[]; avail: number
+function EmpCard({ member, assignAction }: {
+  member: ResourceSearchMember
+  assignAction?: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
-  const allSkills: string[] = (emp.Skills || '').split(',').map((s: string) => s.trim()).filter(Boolean)
+  const score = member.composite_score
+  const matched = member.matched_skills
+  const partial = member.partial_skills
+  const avail = member.available_bandwidth
+  const allSkills = member.skills
   const bwColor = avail >= 60 ? 'bg-emerald-500' : avail >= 30 ? 'bg-amber-500' : 'bg-red-400'
   const scoreCls = score >= 75 ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
     : score >= 50 ? 'text-amber-700 bg-amber-50 border-amber-200'
       : 'text-orange-700 bg-orange-50 border-orange-200'
-  const initials = emp.Name.split(' ').slice(0, 2).map((n: string) => n[0]).join('')
+  const initials = member.initials || member.name.split(' ').slice(0, 2).map(n => n[0]).join('')
 
   return (
-    <div className={`rounded-xl border transition-all ${expanded ? 'border-blue-200 shadow-sm' : 'border-gray-100 hover:border-gray-200'} bg-white`}>
-      <div className="flex items-center gap-3 p-3 cursor-pointer select-none" onClick={() => setExpanded(e => !e)}>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+    <div className={`rounded-xl border transition-all group/emp ${expanded ? 'border-blue-200 shadow-sm' : 'border-gray-100 hover:border-gray-200'} bg-white`}>
+      <div className="flex items-center gap-3 p-4 cursor-pointer select-none" onClick={() => setExpanded(e => !e)}>
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-sm font-bold flex items-center justify-center flex-shrink-0">
           {initials}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-gray-900 truncate">{emp.Name}</p>
-            <span className={`text-[10px] font-bold rounded-full border px-2 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
+            <p className="text-sm font-bold text-gray-900 truncate">{member.name}</p>
+            {member.resource_type && (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${member.resource_type === 'External' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                member.resource_type === 'Consultant' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                  'bg-emerald-50 text-emerald-600 border-emerald-100'
+                }`}>
+                {member.resource_type}
+              </span>
+            )}
+            <span className={`text-sm font-bold rounded-full border px-2.5 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
+            {member.skill_score > 0 && (
+              <span className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
+                {member.skill_score}% skills · {Math.round(avail)}% free
+              </span>
+            )}
           </div>
-          <p className="text-xs text-gray-500 truncate">{emp.Role}</p>
+          <p className="text-sm font-medium text-gray-700 truncate">{member.role}</p>
         </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="w-24">
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 min-w-[160px]">
+          <div className="w-36">
             <div className="flex justify-between mb-0.5">
-              <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wide">Available</span>
-              <span className="text-[10px] font-bold text-gray-700">{avail}%</span>
+              <span className="text-sm text-gray-600 uppercase font-bold tracking-wide">Available</span>
+              <span className="text-sm font-bold text-gray-800">{avail}%</span>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-1.5">
               <div className={`h-full rounded-full ${bwColor}`} style={{ width: `${avail}%` }} />
             </div>
           </div>
-          {expanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+          <div className="flex items-center gap-1 text-sm font-semibold text-gray-600">
+            <span>{expanded ? 'Hide details' : 'View details'}</span>
+            <ChevronDown size={14} className={`text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : 'rotate-0'}`} />
+          </div>
         </div>
       </div>
 
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-xs">
+
+          {/* Skills */}
+          {allSkills.length > 0 && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Current Projects</p>
-              <p className="text-gray-600 leading-relaxed">{emp['Current Projects'] || '—'}</p>
+              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">Skills</p>
+              <div className="flex flex-wrap gap-1">
+                {allSkills.map((skill: string) => {
+                  const sl = skill.toLowerCase()
+                  const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
+                  const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
+                  return (
+                    <span key={skill} className={`text-sm font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
+                        isPartial ? 'bg-amber-50 text-amber-600' :
+                          'bg-gray-100 text-gray-500'
+                      }`}>
+                      {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
+                    </span>
+                  )
+                })}
+              </div>
             </div>
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Timeline Availability</p>
-              <p className={avail > 50 ? 'text-emerald-600 font-semibold' : avail > 20 ? 'text-amber-600 font-semibold' : 'text-red-500 font-semibold'}>
-                {avail > 50 ? '✅ Fully available' : avail > 20 ? '⚠️ Limited capacity' : '❌ Near full capacity'}
-              </p>
-            </div>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Skills</p>
-            <div className="flex flex-wrap gap-1">
-              {allSkills.map((skill: string) => {
-                const sl = skill.toLowerCase()
-                const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
-                const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
-                return (
-                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
-                      isPartial ? 'bg-amber-50 text-amber-600' :
-                        'bg-gray-100 text-gray-500'
-                    }`}>
-                    {isMatched ? '✓ ' : isPartial ? '~ ' : ''}{skill}
-                  </span>
-                )
-              })}
-            </div>
-          </div>
+          )}
+        </div>
+      )}
+
+      {assignAction && (
+        <div
+          className={`px-3 pb-3 flex justify-end overflow-hidden transition-all duration-200 ${expanded
+              ? 'max-h-14 opacity-100'
+              : 'max-h-0 opacity-0 group-hover/emp:max-h-14 group-hover/emp:opacity-100 group-focus-within/emp:max-h-14 group-focus-within/emp:opacity-100'
+            }`}
+        >
+          {assignAction}
         </div>
       )}
     </div>
@@ -341,72 +375,73 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
     <div className={`rounded-xl border transition-all ${assigned ? 'border-blue-400 bg-blue-50/30 shadow-sm' :
         expanded ? 'border-blue-200 shadow-sm' :
           'border-gray-100 hover:border-blue-200 bg-white'
-      }`}>
-      <div className="flex items-center gap-3 p-3">
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0 border border-blue-200">
+      } group/ext`}>
+      <div className="flex items-center gap-3 p-4">
+        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-700 text-sm font-bold flex items-center justify-center flex-shrink-0 border border-blue-200">
           {initials}
         </div>
 
         <div className="flex-1 min-w-0 cursor-pointer select-none" onClick={() => setExpanded(e => !e)}>
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold text-gray-900 truncate">{displayName}</p>
-            <span className={`text-[10px] font-bold rounded-full border px-2 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
-            <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 uppercase tracking-wider ${isConsultant ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'
+            <span className={`text-sm font-bold rounded-full border px-2.5 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
+            <span className={`text-sm font-bold rounded-full px-2 py-0.5 uppercase tracking-wider ${isConsultant ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-blue-50 text-blue-600 border-blue-100'
               } border`}>{type}</span>
             {assigned && (
-              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5 flex items-center gap-0.5">
+              <span className="text-sm font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5 flex items-center gap-0.5">
                 <Check size={9} /> Assigned
               </span>
             )}
           </div>
-          {isConsultant && <p className="text-[10px] text-gray-400 font-medium">via {companyName}</p>}
+          {isConsultant && <p className="text-sm text-gray-600 font-medium">via {companyName}</p>}
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="w-24">
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 min-w-[160px]">
+          <div className="w-36">
             <div className="flex justify-between mb-0.5">
-              <span className="text-[9px] text-gray-400 uppercase font-bold tracking-wide">Capacity</span>
-              <span className="text-[10px] font-bold text-blue-600">Available</span>
+              <span className="text-sm text-gray-600 uppercase font-bold tracking-wide">Capacity</span>
+              <span className="text-sm font-bold text-blue-600">Available</span>
             </div>
             <div className="w-full bg-gray-100 rounded-full h-1.5">
               <div className="h-full rounded-full bg-blue-400" style={{ width: '100%' }} />
             </div>
           </div>
 
-          <div className="cursor-pointer" onClick={() => setExpanded(e => !e)}>
-            {expanded ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+          <div className="cursor-pointer flex items-center gap-1 text-sm font-semibold text-gray-600" onClick={() => setExpanded(e => !e)}>
+            <span>{expanded ? 'Hide details' : 'View details'}</span>
+            <ChevronDown size={14} className={`text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : 'rotate-0'}`} />
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-xs">
+        <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Domains</p>
+              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">Domains</p>
               <div className="flex flex-wrap gap-1">
                 {domains.map(d => (
-                  <span key={d} className="rounded-full bg-indigo-50 text-indigo-700 text-[10px] font-medium px-2 py-0.5">{d}</span>
+                  <span key={d} className="rounded-full bg-indigo-50 text-indigo-700 text-sm font-medium px-2.5 py-0.5">{d}</span>
                 ))}
                 {domains.length === 0 && <p className="text-gray-400">—</p>}
               </div>
             </div>
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Engagement Model</p>
-              <p className="text-gray-600 font-medium">{company['Engagement Model'] || '—'}</p>
-              <p className="text-gray-400 text-[10px] mt-0.5">{company['Partnership Model'] || ''}</p>
+              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">Engagement Model</p>
+              <p className="text-sm text-gray-700 font-medium">{company['Engagement Model'] || '—'}</p>
+              <p className="text-sm text-gray-500 mt-0.5">{company['Partnership Model'] || ''}</p>
             </div>
           </div>
 
           <div>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Tech Stack</p>
+            <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">Tech Stack</p>
             <div className="flex flex-wrap gap-1">
               {techStack.map((skill: string) => {
                 const sl = skill.toLowerCase()
                 const isMatched = matched.some(m => sl.includes(m.toLowerCase()) || m.toLowerCase().includes(sl))
                 const isPartial = !isMatched && partial.some(p => sl.includes(p.toLowerCase()) || p.toLowerCase().includes(sl))
                 return (
-                  <span key={skill} className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
+                  <span key={skill} className={`text-sm font-medium rounded-full px-2.5 py-0.5 ${isMatched ? 'bg-emerald-100 text-emerald-700' :
                       isPartial ? 'bg-amber-50 text-amber-600' :
                         'bg-gray-100 text-gray-500'
                     }`}>
@@ -414,40 +449,49 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
                   </span>
                 )
               })}
-              {techStack.length === 0 && <p className="text-xs text-gray-400">—</p>}
+              {techStack.length === 0 && <p className="text-sm text-gray-400">—</p>}
             </div>
           </div>
 
           {company['Overview'] && (
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Overview</p>
-              <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">{company['Overview']}</p>
+              <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">Overview</p>
+              <p className="text-sm text-gray-700 leading-relaxed line-clamp-2">{company['Overview']}</p>
             </div>
           )}
 
           {company['Website'] && (
             <a href={company['Website']} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 font-medium">
+              className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
               <ExternalLink size={10} /> {company['Website']}
             </a>
           )}
         </div>
       )}
 
-      <div className="px-3 pb-3 flex justify-end">
-        {assigned ? (
-          <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold px-3 py-1.5">
-            <CheckCircle2 size={13} /> Assigned to Slot
-          </span>
-        ) : (
+        {!assigned && (
+        <div
+          className={`px-3 pb-3 flex justify-end overflow-hidden transition-all duration-200 ${expanded
+              ? 'max-h-14 opacity-100'
+              : 'max-h-0 opacity-0 group-hover/ext:max-h-14 group-hover/ext:opacity-100 group-focus-within/ext:max-h-14 group-focus-within/ext:opacity-100'
+            }`}
+        >
           <button
             onClick={onAssign}
-            className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 transition-colors shadow-sm"
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-3 py-1.5 transition-colors shadow-sm"
           >
-            <Plus size={12} /> Assign to Slot
+            <Plus size={12} /> Assign
           </button>
-        )}
-      </div>
+        </div>
+      )}
+
+      {assigned && (
+        <div className="px-3 pb-3 flex justify-end">
+          <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-bold px-3 py-1.5">
+            <CheckCircle2 size={13} /> Assigned
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -457,7 +501,7 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
 interface NewProposalModalProps {
   open: boolean
   onClose: () => void
-  onSave: (project: any) => void
+  onSave: (project: any) => Promise<void> | void
 }
 
 const STEP_LABELS = [
@@ -470,6 +514,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<WizardStep>('choose')
+  const [isSaving, setIsSaving] = useState(false)
   const [fileName, setFileName] = useState('')
   const [projectName, setProjectName] = useState('')
   const [client, setClient] = useState('')
@@ -487,6 +532,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const [extractWarnings, setExtractWarnings] = useState<string[]>([])
   const [extractError, setExtractError] = useState<string | null>(null)
   const [analysisMeta, setAnalysisMeta] = useState<{ processingMs: number; pages: number } | null>(null)
+  const [memberSearchResults, setMemberSearchResults] = useState<ResourceSearchMember[]>([])
+  const [memberSearchLoading, setMemberSearchLoading] = useState(false)
+  const [refinementResults, setRefinementResults] = useState<ResourceSearchMember[]>([])
+  const [refinementLoading, setRefinementLoading] = useState(false)
+  const [allocLoading, setAllocLoading] = useState(false)
 
   const handleClose = () => {
     setStep('choose'); setFileName(''); setProjectName(''); setClient('')
@@ -496,6 +546,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
     setEditingMilestoneId(null); setEditingResourceId(null)
     setSelectedAllocId(null); setSearchTab('Internal Team')
     setExtractWarnings([]); setExtractError(null); setAnalysisMeta(null)
+    setMemberSearchResults([]); setMemberSearchLoading(false)
+    setRefinementResults([]); setRefinementLoading(false)
+    setAllocLoading(false)
     onClose()
   }
 
@@ -532,6 +585,45 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       setStep('s1')
     }
   }
+
+  // ── Resource search: fetch from backend when step 2 resource slot changes ──
+  useEffect(() => {
+    if (step !== 's2') return
+    const res = resources[selectedResIdx]
+    if (!res) return
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    setMemberSearchLoading(true)
+    setMemberSearchResults([])
+    searchResources({
+      role: res.role,
+      skills: res.skills,
+      bandwidth_needed: res.bandwidth,
+      project_start: projectStart,
+      project_end: projectEnd,
+    }).then(data => setMemberSearchResults(data.members))
+      .catch(() => setMemberSearchResults([]))
+      .finally(() => setMemberSearchLoading(false))
+  }, [step, selectedResIdx])
+
+  // ── Refinement: fetch from backend when step 3 slot selection changes ──
+  useEffect(() => {
+    if (step !== 's3' || !selectedAllocId) return
+    const res = resources.find(r => r.id === selectedAllocId)
+    if (!res) return
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    setRefinementLoading(true)
+    searchResources({
+      role: res.role,
+      skills: res.skills,
+      bandwidth_needed: res.bandwidth,
+      project_start: projectStart,
+      project_end: projectEnd,
+    }).then(data => setRefinementResults(data.members))
+      .catch(() => setRefinementResults([]))
+      .finally(() => setRefinementLoading(false))
+  }, [step, selectedAllocId])
 
   const updateMilestone = (idx: number, field: keyof MilestoneRow, value: string) => {
     setMilestones(prev => {
@@ -591,59 +683,81 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
   const selectedRes = resources[selectedResIdx]
 
-  const effectiveTerms = useMemo(() => {
-    if (skillSearch) return [skillSearch.toLowerCase()]
-    if (activeSkillChip) return [activeSkillChip.toLowerCase()]
-    return (selectedRes?.skills || []).map((s: string) => s.toLowerCase())
-  }, [skillSearch, activeSkillChip, selectedRes])
-
-  const filteredEmps = useMemo(() => {
-    const employees: any[] = (internalData as any).employees
-    if (!effectiveTerms.length) return employees
-    return employees.filter((emp: any) =>
-      effectiveTerms.some(term =>
-        (emp['Skills'] || '').toLowerCase().includes(term) ||
-        (emp['Role'] || '').toLowerCase().includes(term)
-      )
+  // Only filter on explicit user input — backend already scores relevance
+  const filteredMembers = useMemo(() => {
+    const term = skillSearch
+      ? skillSearch.toLowerCase()
+      : activeSkillChip
+        ? activeSkillChip.toLowerCase()
+        : ''
+    if (!term) return memberSearchResults
+    return memberSearchResults.filter(m =>
+      m.skills.some(s => s.toLowerCase().includes(term)) ||
+      (m.role || '').toLowerCase().includes(term) ||
+      (m.name || '').toLowerCase().includes(term)
     )
-  }, [effectiveTerms])
+  }, [memberSearchResults, skillSearch, activeSkillChip])
 
-  const proceedToStep3 = () => {
-    const fresh = runAutoAlloc(resources)
-    setAllocations(fresh)
+  const proceedToStep3 = async () => {
+    setAllocLoading(true)
+    const projectStart = milestones[0]?.startDate
+    const projectEnd = milestones[milestones.length - 1]?.endDate
+    try {
+      const result = await autoAllocateResources({
+        resources: resources.map(r => ({ id: r.id, role: r.role, skills: r.skills, bandwidth: r.bandwidth })),
+        project_start: projectStart,
+        project_end: projectEnd,
+      })
+      const allocs = result.map(r => ({
+        resourceId: r.resourceId,
+        role: r.role,
+        requiredBW: r.requiredBW,
+        tbdBW: r.tbdBW,
+        status: r.status,
+        assignments: r.assignments.map(a => ({
+          type: a.type as 'internal',
+          id: a.id,
+          name: a.name,
+          subText: a.role || 'Professional Services',
+          bw: a.bw,
+          score: a.score,
+        })),
+      }))
+      setAllocations(allocs)
+      setSelectedAllocId(allocs[0]?.resourceId || null)
+    } catch {
+      // Fallback to client-side allocation if backend unavailable
+      const fresh = runAutoAlloc(resources)
+      setAllocations(fresh)
+      setSelectedAllocId(fresh[0]?.resourceId || null)
+    } finally {
+      setAllocLoading(false)
+    }
     setTbdAssigned({})
-    setSelectedAllocId(fresh[0]?.resourceId || null)
     setSearchTab('Internal Team')
     setStep('s3')
   }
 
-  const assignInternalS3 = (resourceId: string, emp: any) => {
+  const assignInternalS3 = (resourceId: string, member: ResourceSearchMember) => {
     setAllocations(prev => prev.map(a => {
       if (a.resourceId !== resourceId) return a
       if (a.tbdBW <= 0) return a
-      
-      const skills = resources.find(r => r.id === resourceId)?.skills || []
-      const { score } = scoreEmployee(emp, skills)
-      const avail = estAvailBW(emp, {}) 
-      const allocBW = Math.min(avail, a.tbdBW)
-      
+
+      const allocBW = Math.min(member.available_bandwidth, a.tbdBW)
       const newAssign: Assignment = {
         type: 'internal',
-        id: String(emp.ID),
-        name: emp.Name,
-        subText: emp.Department || 'Professional Services',
+        id: member.id,
+        name: member.name,
+        subText: member.role || 'Professional Services',
         bw: allocBW,
-        score
+        score: member.composite_score,
       }
-
-      const updated = [...a.assignments, newAssign].sort((a, b) => b.bw - a.bw)
+      const updated = [...a.assignments, newAssign].sort((x, y) => y.bw - x.bw)
       const newTbd = Math.max(0, a.tbdBW - allocBW)
-      return {
-        ...a,
-        assignments: updated,
-        tbdBW: newTbd,
-        status: newTbd <= 0 ? 'matched' : 'partial'
-      }
+      
+      toast.success(`✓ ${member.name} assigned to ${a.role || 'Role'}`)
+      
+      return { ...a, assignments: updated, tbdBW: newTbd, status: newTbd <= 0 ? 'matched' : 'partial' }
     }))
   }
 
@@ -666,6 +780,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       }
 
       const updated = [...a.assignments, newAssign]
+      
+      const displayName = company['Contact Person'] || company['Company Name']
+      toast.success(`✓ ${displayName} assigned to ${a.role || 'Role'}`)
+
       return {
         ...a,
         assignments: updated,
@@ -695,63 +813,69 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  const handleSave = () => {
-    onSave({
-      'Project ID': Date.now(),
-      'Project Name': projectName || 'New Project',
-      'Client': client || null,
-      'Project Type': 'New Proposal',
-      'Delivery Manager': 'Unassigned',
-      'Revenue Model': 'Milestone',
-      'Resource Aligned': allocations.map(a => a.assignments.map(as => as.name).join(', ')).filter(Boolean).join(', ') || 'TBD',
-      'Handled By': 'Hybrid Team',
-      'Add Info': '',
-      // Formatted milestones (for display on Proposal page)
-      'Milestones': milestones.map((m, i) => ({
-        'Milestone': `M${i + 1}`,
-        'Milestone Description': m.name,
-        'Planned Start': fmtDate(m.startDate),
-        'Planned End': fmtDate(m.endDate),
-        '% Complete': 0,
-        'Current Status': 'Not Started',
-        'Invoice Status': 'Pending',
-      })),
-      // Raw ISO milestones for DB insertion (used by Projects page)
-      '_rawMilestones': milestones.map((m, i) => ({
-        code: `M${i + 1}`,
-        description: m.name,
-        plannedStart: m.startDate,  // YYYY-MM-DD
-        plannedEnd: m.endDate,      // YYYY-MM-DD
-      })),
-      '_allocations': allocations,
-    })
-    handleClose()
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await onSave({
+        'Project ID': Date.now(),
+        'Project Name': projectName || 'New Project',
+        'Client': client || null,
+        'Project Type': 'New Proposal',
+        'Delivery Manager': 'Unassigned',
+        'Revenue Model': 'Milestone',
+        'Resource Aligned': allocations.map(a => a.assignments.map(as => as.name).join(', ')).filter(Boolean).join(', ') || 'TBD',
+        'Handled By': 'Hybrid Team',
+        'Add Info': '',
+        // Formatted milestones (for display on Proposal page)
+        'Milestones': milestones.map((m, i) => ({
+          'Milestone': `M${i + 1}`,
+          'Milestone Description': m.name,
+          'Planned Start': fmtDate(m.startDate),
+          'Planned End': fmtDate(m.endDate),
+          '% Complete': 0,
+          'Current Status': 'Not Started',
+          'Invoice Status': 'Pending',
+        })),
+        // Raw ISO milestones for DB insertion (used by Projects page)
+        '_rawMilestones': milestones.map((m, i) => ({
+          code: `M${i + 1}`,
+          description: m.name,
+          plannedStart: m.startDate,  // YYYY-MM-DD
+          plannedEnd: m.endDate,      // YYYY-MM-DD
+        })),
+        '_allocations': allocations,
+      })
+      handleClose()
+    } catch (error) {
+      console.error("Failed to finalize proposal:", error)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   if (!open) return null
 
   const currentStepIdx = STEP_LABELS.findIndex(s => s.key === step)
-  const tbdSlots = allocations.filter(a => a.tbdBW > 0)
-  const companies: any[] = (externalData as any).companies
+  const selectedAllocation = allocations.find(a => a.resourceId === selectedAllocId) || null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-6xl max-h-[92vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4">
+      <div className="relative w-[96vw] max-w-[1520px] h-[96vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-8 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-900">New Proposal</h2>
-            {fileName && <p className="text-[11px] text-gray-400 mt-0.5">Parsed from: {fileName}</p>}
+            {fileName && <p className="text-xs text-gray-400 mt-0.5">Parsed from: {fileName}</p>}
           </div>
 
           {currentStepIdx >= 0 && (
             <div className="flex items-center gap-1.5">
               {STEP_LABELS.map((s, i) => (
                 <div key={s.key} className="flex items-center gap-1.5">
-                  <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold transition-all ${i < currentStepIdx ? 'bg-emerald-100 text-emerald-700' :
+                  <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold transition-all ${i < currentStepIdx ? 'bg-emerald-100 text-emerald-700' :
                       i === currentStepIdx ? 'bg-blue-600 text-white shadow-sm' :
-                        'bg-gray-100 text-gray-400'
+                        'bg-gray-200 text-gray-700'
                     }`}>
                     {i < currentStepIdx ? <Check size={10} /> : <span className="w-3 text-center">{i + 1}</span>}
                     {s.label}
@@ -768,53 +892,72 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
         </div>
 
         {/* ── Body ── */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 relative">
+          {/* Working Loader Overlay */}
+          {isSaving && (
+            <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white p-10 rounded-2xl shadow-xl flex flex-col items-center border border-blue-50 max-w-md text-center">
+                <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-6" />
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Finalizing Proposal</h3>
+                <p className="text-gray-500 leading-relaxed">
+                  We are working on creating the projects and assigning the selected resources, wait for sometime.
+                </p>
+                <div className="mt-8 flex gap-1 items-center">
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ══ CHOOSE ══════════════════════════════════════════════════════════ */}
           {step === 'choose' && (
-            <div className="flex flex-col items-center justify-center py-14 px-8">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2 text-center">Upload Project Brief</h3>
-              <p className="text-gray-400 text-sm mb-10 text-center max-w-md">
+            <div className="min-h-full flex flex-col items-center justify-center px-8 py-10">
+              <div className="w-full max-w-2xl text-center">
+              <h3 className="text-3xl font-bold text-gray-900 mb-2">Upload Project Brief</h3>
+              <p className="text-gray-500 text-base mb-10 mx-auto max-w-xl leading-relaxed">
                 Upload a project brief to auto-extract milestones, resources, and required skills using AI.
               </p>
-              <div className="flex justify-center w-full max-w-md">
+              <div className="flex justify-center w-full max-w-xl mx-auto">
                 <button
                   onClick={() => fileRef.current?.click()}
-                  className="w-full flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 p-10 hover:bg-blue-50 hover:border-blue-400 transition-all group text-center"
+                  className="w-full flex flex-col items-center gap-5 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/30 p-14 hover:bg-blue-50 hover:border-blue-400 transition-all group text-center"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center transition-colors">
-                    <Upload size={28} className="text-blue-600" />
+                  <div className="w-20 h-20 rounded-2xl bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center transition-colors">
+                    <Upload size={34} className="text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-base font-bold text-gray-900">Upload Document</p>
-                    <p className="text-xs text-gray-500 mt-1">HTML · PDF · DOCX<br />AI extracts milestones, resources & skills</p>
+                    <p className="text-lg font-bold text-gray-900">Upload Document</p>
+                    <p className="text-sm text-gray-500 mt-1.5">HTML · PDF · DOCX<br />AI extracts milestones, resources & skills</p>
                   </div>
-                  <span className="rounded-full bg-blue-600 text-white text-xs font-bold px-4 py-1.5 shadow-sm">Smart Extract</span>
+                  <span className="rounded-full bg-blue-600 text-white text-sm font-bold px-5 py-2 shadow-sm">Smart Extract</span>
                 </button>
+              </div>
               </div>
             </div>
           )}
 
           {/* ══ UPLOADING ════════════════════════════════════════════════════════ */}
           {step === 'uploading' && (
-            <div className="flex flex-col items-center justify-center h-72 gap-6">
+            <div className="min-h-full flex flex-col items-center justify-center gap-8 px-8 py-10">
               <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-blue-50 flex items-center justify-center">
-                  <FileText size={36} className="text-blue-400" />
+                <div className="w-24 h-24 rounded-2xl bg-blue-50 flex items-center justify-center">
+                  <FileText size={42} className="text-blue-400" />
                 </div>
-                <div className="absolute -top-1.5 -right-1.5 w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shadow">
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="absolute -top-1.5 -right-1.5 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center shadow">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 </div>
               </div>
               <div className="text-center">
-                <p className="font-bold text-gray-900 text-base">Analyzing document…</p>
-                <p className="text-xs text-gray-400 mt-0.5">{fileName}</p>
-                <p className="text-[11px] text-blue-500 mt-1">Secure parsing in progress. This can take a few seconds for larger PDFs.</p>
+                <p className="font-bold text-gray-900 text-lg">Analyzing document…</p>
+                <p className="text-sm text-gray-500 mt-1">{fileName}</p>
+                <p className="text-xs text-blue-600 mt-1.5">Secure parsing in progress. This can take a few seconds for larger PDFs.</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2.5 flex-wrap justify-center">
                 {['Extracting milestones', 'Mapping resources', 'Identifying skills'].map((label, i) => (
                   <div key={i}
-                    className="flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-700 text-[11px] px-3 py-1 font-semibold animate-pulse"
+                    className="flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-700 text-xs px-3.5 py-1.5 font-semibold animate-pulse"
                     style={{ animationDelay: `${i * 0.35}s` }}
                   >
                     <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
@@ -827,7 +970,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
           {/* ══ STEP 1 — Extraction Review ════════════════════════════════════ */}
           {step === 's1' && (
-            <div className="p-6 space-y-5">
+            <div className="min-h-full p-6 space-y-5">
               {extractError && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
                   <AlertTriangle size={14} className="text-amber-600 mt-0.5" />
@@ -851,20 +994,20 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
               {!isIncompatibleDocument(extractWarnings) && (extractWarnings.length > 0 || analysisMeta) && (
                 <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 space-y-1.5">
                   {analysisMeta && (
-                    <p className="text-[11px] text-blue-700 font-semibold">
+                    <p className="text-xs text-blue-700 font-semibold">
                       Parsed in {Math.max(1, Math.round(analysisMeta.processingMs / 1000))}s
                       {analysisMeta.pages > 0 ? ` · ${analysisMeta.pages} page${analysisMeta.pages > 1 ? 's' : ''}` : ''}
                     </p>
                   )}
                   {extractWarnings.filter(w => !w.startsWith('INCOMPATIBLE_DOCUMENT:')).map((warning, idx) => (
-                    <p key={`${warning}-${idx}`} className="text-[11px] text-blue-700">• {warning}</p>
+                    <p key={`${warning}-${idx}`} className="text-xs text-blue-700">• {warning}</p>
                   ))}
                 </div>
               )}
 
               {isIncompatibleDocument(extractWarnings) && analysisMeta && (
                 <div className="rounded-lg border border-gray-100 bg-gray-50/50 px-4 py-2">
-                  <p className="text-[11px] text-gray-500">
+                  <p className="text-xs text-gray-500">
                     Parsed in {Math.max(1, Math.round(analysisMeta.processingMs / 1000))}s
                     {analysisMeta.pages > 0 ? ` · ${analysisMeta.pages} page${analysisMeta.pages > 1 ? 's' : ''}` : ''}
                   </p>
@@ -876,14 +1019,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 <Zap size={15} className="text-blue-500 flex-shrink-0" />
                 <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
                   <div>
-                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">Project Name</p>
-                    <input className="text-sm font-bold text-gray-900 bg-transparent outline-none w-full placeholder:text-gray-400"
-                      value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Enter project name…" />
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Project Name <span className="text-red-500 font-black">*</span></p>
+                    <input className={`text-sm font-bold text-gray-900 bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5 border transition-all outline-none w-full placeholder:text-gray-400 ${!projectName ? 'border-amber-200 bg-amber-50/30' : 'border-transparent focus:border-blue-300'}`}
+                      value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Enter project name…" required />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-0.5">Client</p>
-                    <input className="text-sm font-bold text-gray-900 bg-transparent outline-none w-full placeholder:text-gray-400"
-                      value={client} onChange={e => setClient(e.target.value)} placeholder="Client name…" />
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Client <span className="text-red-500 font-black">*</span></p>
+                    <input className={`text-sm font-bold text-gray-900 bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5 border transition-all outline-none w-full placeholder:text-gray-400 ${!client ? 'border-amber-200 bg-amber-50/30' : 'border-transparent focus:border-blue-300'}`}
+                      value={client} onChange={e => setClient(e.target.value)} placeholder="Client name…" required />
                   </div>
                 </div>
               </div>
@@ -894,7 +1037,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <div className="flex items-center gap-2">
                     <Calendar size={15} className="text-blue-500" />
                     <span className="text-sm font-bold text-gray-900">Milestone Timeline</span>
-                    <span className="hidden md:inline text-[11px] text-gray-400">· Editing End Date cascades all subsequent milestones</span>
+                    <span className="hidden md:inline text-xs text-gray-600">· Editing End Date cascades all subsequent milestones</span>
                   </div>
                   <button onClick={addMilestone}
                     className="flex items-center gap-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1.5 transition-colors">
@@ -905,11 +1048,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <table className="w-full text-sm min-w-[640px]">
                     <thead>
                       <tr className="border-b border-gray-100">
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-8">#</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Milestone Name</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-36">Start Date</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-36">End Date</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-24">Duration</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-8">#</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase">Milestone Name</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-36">Start Date</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-36">End Date</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-24">Duration</th>
                         <th className="w-10" />
                       </tr>
                     </thead>
@@ -918,39 +1061,39 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                         const isEditing = editingMilestoneId === m.id
                         return (
                           <tr key={m.id} className={`border-b border-gray-50 hover:bg-gray-50/60 group ${isEditing ? 'bg-blue-50/30' : ''}`}>
-                            <td className="px-4 py-2.5">
-                              <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                            <td className="px-4 py-3">
+                              <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">{i + 1}</span>
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <input className="w-full text-sm font-medium text-gray-900 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                <input className="w-full text-base font-medium text-gray-900 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
                                   value={m.name} onChange={e => updateMilestone(i, 'name', e.target.value)} autoFocus />
                               ) : (
-                                <span className="text-sm font-medium text-gray-900 px-2">{m.name}</span>
+                                <span className="text-base font-semibold text-gray-900 px-2">{m.name}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <input type="date" className="text-xs text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                <input type="date" className="text-sm text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
                                   value={m.startDate} onChange={e => updateMilestone(i, 'startDate', e.target.value)} />
                               ) : (
-                                <span className="text-xs text-gray-600 px-2">{fmtDate(m.startDate)}</span>
+                                <span className="text-sm text-gray-700 px-2 font-medium">{fmtDate(m.startDate)}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <input type="date" className="text-xs text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
+                                <input type="date" className="text-sm text-gray-700 bg-white border border-blue-200 focus:border-blue-400 rounded-md px-2 py-1 outline-none transition-colors"
                                   value={m.endDate} onChange={e => updateMilestone(i, 'endDate', e.target.value)} />
                               ) : (
-                                <span className="text-xs text-gray-600 px-2">{fmtDate(m.endDate)}</span>
+                                <span className="text-sm text-gray-700 px-2 font-medium">{fmtDate(m.endDate)}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
-                              <span className="text-[11px] font-mono text-gray-400">
+                            <td className="px-4 py-3">
+                              <span className="text-sm font-semibold text-gray-700">
                                 {daysBetween(m.startDate, m.endDate) === 0 ? '1 day' : `+${daysBetween(m.startDate, m.endDate)} days`}
                               </span>
                             </td>
-                            <td className="px-2 py-2.5">
+                            <td className="px-2 py-3">
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => setEditingMilestoneId(isEditing ? null : m.id)}
@@ -986,7 +1129,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 </div>
                 {milestones.length > 1 && (
                   <div className="px-5 py-1.5 bg-amber-50/40 border-t border-amber-100">
-                    <p className="text-[10px] text-amber-600 font-medium">⚠️ Editing any milestone's End Date will auto-cascade all subsequent milestones forward</p>
+                    <p className="text-xs text-amber-700 font-semibold">⚠️ Editing any milestone's End Date will auto-cascade all subsequent milestones forward</p>
                   </div>
                 )}
               </div>
@@ -1007,11 +1150,11 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <table className="w-full text-sm min-w-[700px]">
                     <thead>
                       <tr className="border-b border-gray-100">
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-10">#</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-44">Role</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Skills Required</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase">Responsibilities</th>
-                        <th className="text-left px-4 py-2 text-[10px] font-bold text-gray-400 uppercase w-44">Bandwidth</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-10">#</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-44">Role</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase">Skills Required</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase">Responsibilities</th>
+                        <th className="text-left px-4 py-2 text-xs font-bold text-gray-600 uppercase w-44">Bandwidth</th>
                         <th className="w-10" />
                       </tr>
                     </thead>
@@ -1020,21 +1163,21 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                         const isEditing = editingResourceId === r.id
                         return (
                           <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/60 group ${isEditing ? 'bg-emerald-50/20' : ''}`}>
-                            <td className="px-4 py-2.5">
-                              <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">R{i + 1}</span>
+                            <td className="px-4 py-3">
+                              <span className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center">R{i + 1}</span>
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <input className="w-full text-sm font-semibold text-gray-900 bg-white border border-emerald-200 rounded-md px-2 py-1 outline-none transition-colors"
+                                <input className="w-full text-base font-semibold text-gray-900 bg-white border border-emerald-200 rounded-md px-2 py-1 outline-none transition-colors"
                                   value={r.role} onChange={e => updateResource(i, 'role', e.target.value)} placeholder="Role title…" autoFocus />
                               ) : (
-                                <span className="text-sm font-semibold text-gray-900 px-2">{r.role || '—'}</span>
+                                <span className="text-base font-semibold text-gray-900 px-2">{r.role || '—'}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               <div className="flex flex-wrap gap-1 items-center px-1">
                                 {r.skills.map(s => (
-                                  <span key={s} className="flex items-center gap-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 group/chip">
+                                  <span key={s} className="flex items-center gap-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold px-2.5 py-1 group/chip">
                                     {s}
                                     {isEditing && (
                                       <button onClick={() => removeSkill(i, s)}
@@ -1046,7 +1189,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                 ))}
                                 {isEditing ? (
                                   <input
-                                    className="text-[11px] bg-white border border-dashed border-gray-200 rounded-full px-2 py-0.5 outline-none w-16 text-gray-500 focus:border-blue-300 focus:w-24 transition-all"
+                                    className="text-xs bg-white border border-dashed border-gray-200 rounded-full px-2 py-0.5 outline-none w-16 text-gray-500 focus:border-blue-300 focus:w-24 transition-all"
                                     placeholder="+ skill"
                                     onKeyDown={e => {
                                       const val = (e.target as HTMLInputElement).value.trim()
@@ -1058,19 +1201,19 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                     }}
                                   />
                                 ) : r.skills.length === 0 && (
-                                  <span className="text-[10px] text-gray-400 italic">No skills added</span>
+                                  <span className="text-xs text-gray-500 italic">No skills added</span>
                                 )}
                               </div>
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               {isEditing ? (
-                                <input className="w-full text-xs text-gray-600 bg-white border border-gray-200 rounded-md px-2 py-1 outline-none transition-colors"
+                                <input className="w-full text-sm text-gray-700 bg-white border border-gray-200 rounded-md px-2 py-1 outline-none transition-colors"
                                   value={r.responsibilities} onChange={e => updateResource(i, 'responsibilities', e.target.value)} placeholder="Key responsibilities…" />
                               ) : (
-                                <span className="text-xs text-gray-600 px-2 truncate block max-w-[200px]">{r.responsibilities || '—'}</span>
+                                <span className="text-sm text-gray-700 px-2 truncate block max-w-[260px] font-medium">{r.responsibilities || '—'}</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5">
+                            <td className="px-4 py-3">
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 bg-gray-100 rounded-full h-2 min-w-[80px] overflow-hidden">
                                   <div
@@ -1080,19 +1223,19 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                     style={{ width: `${r.bandwidth}%` }}
                                   />
                                 </div>
-                                <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1 shadow-sm">
+                                <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1 shadow-sm">
                                   {isEditing ? (
                                     <input type="number" min={0} max={100} step={5}
-                                      className="w-8 text-[11px] font-bold text-gray-900 bg-transparent text-right outline-none appearance-none"
+                                      className="w-9 text-xs font-bold text-gray-900 bg-transparent text-right outline-none appearance-none"
                                       value={r.bandwidth} onChange={e => updateResource(i, 'bandwidth', Math.min(100, Math.max(0, Number(e.target.value))))} />
                                   ) : (
-                                    <span className="w-8 text-[11px] font-bold text-gray-900 text-right">{r.bandwidth}</span>
+                                    <span className="w-9 text-xs font-bold text-gray-900 text-right">{r.bandwidth}</span>
                                   )}
-                                  <span className="text-[10px] text-gray-400 font-bold">%</span>
+                                  <span className="text-xs text-gray-500 font-bold">%</span>
                                 </div>
                               </div>
                             </td>
-                            <td className="px-2 py-2.5">
+                            <td className="px-2 py-3">
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => setEditingResourceId(isEditing ? null : r.id)}
@@ -1132,32 +1275,27 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
           {/* ══ STEP 2 — Resource Allocation Search ════════════════════════════ */}
           {step === 's2' && (
-            <div className="flex" style={{ minHeight: 520 }}>
+            <div className="flex min-h-full">
               {/* Left Panel */}
               <div className="w-60 border-r border-gray-100 flex-shrink-0 flex flex-col">
                 <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-                  <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Required Resources</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Select a slot to search internal team</p>
+                  <p className="text-xs font-bold text-gray-700 uppercase tracking-widest">Required Resources</p>
+                  <p className="text-sm font-semibold text-gray-700 mt-1">Select a slot to search internal team</p>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
                   {resources.map((res, i) => (
                     <button key={res.id}
                       onClick={() => { setSelectedResIdx(i); setSkillSearch(''); setActiveSkillChip('') }}
-                      className={`w-full text-left rounded-xl px-3 py-2.5 transition-all border ${selectedResIdx === i
+                      className={`w-full text-left rounded-xl px-3 py-3.5 transition-all border ${selectedResIdx === i
                           ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                           : 'border-gray-100 hover:bg-gray-50 text-gray-700 hover:border-gray-200'
                         }`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className={`text-[9px] font-bold uppercase tracking-wider ${selectedResIdx === i ? 'text-blue-200' : 'text-gray-400'}`}>R{i + 1}</span>
-                        <span className={`text-[9px] font-bold rounded-full px-1.5 py-0.5 ${selectedResIdx === i ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>{res.bandwidth}%</span>
+                        <span className={`text-xs font-bold uppercase tracking-wider ${selectedResIdx === i ? 'text-blue-200' : 'text-gray-500'}`}>R{i + 1}</span>
+                        <span className={`text-xs font-bold rounded-full px-1.5 py-0.5 ${selectedResIdx === i ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>{res.bandwidth}%</span>
                       </div>
-                      <p className="text-xs font-bold leading-tight">{res.role || 'Unnamed Role'}</p>
-                      {res.skills.length > 0 && (
-                        <p className={`text-[10px] mt-0.5 truncate ${selectedResIdx === i ? 'text-blue-200' : 'text-gray-400'}`}>
-                          {res.skills.slice(0, 2).join(' · ')}{res.skills.length > 2 ? ` +${res.skills.length - 2}` : ''}
-                        </p>
-                      )}
+                      <p className="text-sm font-bold leading-tight">{res.role || 'Unnamed Role'}</p>
                     </button>
                   ))}
                 </div>
@@ -1169,17 +1307,17 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <>
                     <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-start gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-gray-900">
+                        <p className="text-base font-bold text-gray-900">
                           Results for: <span className="text-blue-600">{selectedRes.role || 'Unnamed Role'}</span>
-                          <span className="text-xs text-gray-400 font-normal ml-2">· filter by skill tag or search below</span>
+                          <span className="text-sm text-gray-600 font-medium ml-2">· filter by skill tag or search below</span>
                         </p>
                         {selectedRes.skills.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1.5 items-center">
-                            <span className="text-[10px] text-gray-400 self-center">Skill filter:</span>
+                            <span className="text-sm text-gray-700 self-center font-semibold">Skill filter:</span>
                             {selectedRes.skills.map(s => (
                               <button key={s}
                                 onClick={() => { setSkillSearch(''); setActiveSkillChip(activeSkillChip === s ? '' : s) }}
-                                className={`text-[10px] font-bold rounded-full px-2 py-0.5 transition-all cursor-pointer ${activeSkillChip === s ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                className={`text-xs font-bold rounded-full px-2.5 py-1 transition-all cursor-pointer ${activeSkillChip === s ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                   }`}
                               >{s}</button>
                             ))}
@@ -1196,23 +1334,27 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                         />
                       </div>
                     </div>
-                    <div className="px-5 py-1.5 bg-blue-50/30 border-b border-blue-50 text-[10px] text-blue-500 font-medium">
-                      Showing {filteredEmps.length} team member{filteredEmps.length !== 1 ? 's' : ''} · Bandwidth shows estimated availability after current project allocations
+                    <div className="px-5 py-2 bg-blue-50/50 border-b border-blue-100 text-sm text-blue-700 font-semibold">
+                      {memberSearchLoading
+                        ? 'Searching team members…'
+                        : `Showing ${filteredMembers.length} relevant member${filteredMembers.length !== 1 ? 's' : ''} · Score = 60% skills + 30% role match + 10% availability`}
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                      {filteredEmps.length === 0 ? (
+                      {memberSearchLoading ? (
+                        <div className="flex flex-col items-center justify-center h-44 text-gray-400">
+                          <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mb-3" />
+                          <p className="text-sm font-medium">Fetching available team members…</p>
+                        </div>
+                      ) : filteredMembers.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-44 text-gray-400">
                           <Search size={26} className="mb-2 opacity-30" />
                           <p className="text-sm font-medium">No matching team members</p>
                           <p className="text-xs mt-1 opacity-60">Try a different skill or clear the filter</p>
                         </div>
                       ) : (
-                        filteredEmps.map((emp: any) => {
-                          const { score, matched, partial } = scoreEmployee(emp, selectedRes.skills)
-                          return (
-                            <EmpCard key={emp.ID} emp={emp} score={score} matched={matched} partial={partial} avail={estAvailBW(emp, {})} />
-                          )
-                        })
+                        filteredMembers.map(member => (
+                          <EmpCard key={member.id} member={member} />
+                        ))
                       )}
                     </div>
                   </>
@@ -1228,14 +1370,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
           {/* ══ STEP 3 — Auto Allocation + TBD External + Summary ══════════════ */}
           {step === 's3' && (
-            <div className="p-6 space-y-6">
+            <div className="min-h-full p-6 space-y-6">
 
               {/* Banner */}
               <div className="flex items-center gap-4 rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-3.5">
                 <Zap size={16} className="text-blue-500 flex-shrink-0" />
                 <div className="flex-1">
                   <p className="text-sm font-bold text-gray-900">Auto Allocation Complete</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Best internal fit assigned per role · TBD shown where no match found · Assign external partners below for any TBD slots</p>
+                  <p className="text-xs text-gray-600 mt-0.5">Best internal fit assigned per role · TBD shown where no match found · Assign external partners below for any TBD slots</p>
                 </div>
                 <div className="flex gap-3">
                   {[
@@ -1245,13 +1387,13 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   ].map(s => (
                     <div key={s.label} className={`rounded-lg border px-3 py-1.5 text-center ${s.cls}`}>
                       <p className="text-base font-bold leading-none">{s.value}</p>
-                      <p className="text-[10px] font-bold uppercase tracking-wide mt-0.5">{s.label}</p>
+                      <p className="text-xs font-bold uppercase tracking-wide mt-0.5">{s.label}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* ── 3A: Allocation Table ── */}
+              {/* ── 3A: Allocation Table (Classic View) ── */}
               <div className="rounded-xl border border-gray-200 overflow-hidden">
                 <div className="px-5 py-3 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
                   <Users size={14} className="text-gray-500" />
@@ -1260,13 +1402,13 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100">
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-10">#</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase">Role</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-28">Required BW</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase">Suggested Resource</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-28">Type</th>
-                      <th className="text-left px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-20">Status</th>
-                      <th className="text-right px-4 py-2.5 text-[10px] font-bold text-gray-400 uppercase w-16">Action</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase w-10">#</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase">Role</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase w-28">Required BW</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase">Suggested Resource</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase w-28">Type</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-bold text-gray-600 uppercase w-20">Status</th>
+                      <th className="text-right px-4 py-2.5 text-xs font-bold text-gray-600 uppercase w-24">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1275,17 +1417,17 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       return (
                         <tr key={alloc.resourceId} className={`border-b border-gray-50 ${alloc.tbdBW > 0 ? 'bg-amber-50/30' : 'hover:bg-gray-50/40'}`}>
                           <td className="px-4 py-3">
-                            <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-[10px] font-bold flex items-center justify-center">R{i + 1}</span>
+                            <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-xs font-bold flex items-center justify-center">R{i + 1}</span>
                           </td>
                           <td className="px-4 py-3">
                             <p className="text-sm font-semibold text-gray-900">{alloc.role}</p>
                             {resRow?.skills.length ? (
-                              <p className="text-[10px] text-gray-400 mt-0.5">{resRow.skills.slice(0, 3).join(' · ')}</p>
+                              <p className="text-xs text-gray-600 mt-0.5">{resRow.skills.slice(0, 4).join(' · ')}</p>
                             ) : null}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5">
-                              <div className="w-14 bg-gray-100 rounded-full h-1.5">
+                              <div className="w-16 bg-gray-100 rounded-full h-1.5">
                                 <div className="h-full bg-blue-400 rounded-full" style={{ width: `${alloc.requiredBW}%` }} />
                               </div>
                               <span className="text-xs font-bold text-gray-700">{alloc.requiredBW}%</span>
@@ -1294,24 +1436,19 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1.5">
                               {alloc.assignments.map(as => (
-                                <div key={as.id} className="flex items-center justify-between gap-3 p-1.5 rounded-lg border border-gray-100 bg-white shadow-sm hover:shadow-md transition-shadow group/item">
+                                <div key={as.id} className="flex items-center justify-between gap-3 p-1.5 rounded-lg border border-gray-100 bg-white shadow-sm group/item">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <div className={`w-7 h-7 rounded-lg ${as.type === 'internal' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-[10px] font-bold flex items-center justify-center flex-shrink-0 border`}>
+                                    <div className={`w-7 h-7 rounded-lg ${as.type === 'internal' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-xs font-bold flex items-center justify-center flex-shrink-0 border`}>
                                       {as.name.split(' ').slice(0, 2).map(n => n[0]).join('')}
                                     </div>
                                     <div className="min-w-0">
-                                      <p className="text-[11px] font-bold text-gray-900 truncate flex items-center gap-1.5">
-                                        {as.name}
-                                        <span className={`text-[8px] px-1 rounded uppercase font-bold tracking-tighter ${as.type === 'internal' ? 'bg-emerald-100/50 text-emerald-700' : 'bg-blue-100/50 text-blue-700'}`}>
-                                          {as.type === 'internal' ? 'I' : 'E'}
-                                        </span>
-                                      </p>
-                                      <p className="text-[10px] text-gray-400 truncate">
-                                        <span className="font-bold text-gray-600">{as.bw}% BW</span> · {as.score}% match {as.subText && `· ${as.subText}`}
+                                      <p className="text-xs font-bold text-gray-900 truncate">{as.name}</p>
+                                      <p className="text-xs text-gray-600 truncate">
+                                        <span className="font-semibold">{as.bw}% BW</span> · {as.score}% match {as.subText && `· ${as.subText}`}
                                       </p>
                                     </div>
                                   </div>
-                                  <button 
+                                  <button
                                     onClick={(e) => { e.stopPropagation(); removeAssignment(alloc.resourceId, as.id) }}
                                     className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover/item:opacity-100"
                                     title="Remove Assignment"
@@ -1323,7 +1460,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                               {alloc.tbdBW > 0 && (
                                 <div className="flex items-center gap-2 p-1.5 rounded-lg border border-dashed border-amber-200 bg-amber-50/20">
                                   <div className="w-5 h-5 rounded-full border-2 border-dashed border-amber-300 flex-shrink-0" />
-                                  <span className="text-[9px] text-amber-600 font-bold tracking-tight uppercase">
+                                  <span className="text-xs text-amber-700 font-bold">
                                     {alloc.tbdBW}% Open Slot — Assign Below
                                   </span>
                                 </div>
@@ -1333,25 +1470,25 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">
                               {alloc.assignments.some(a => a.type === 'internal') && (
-                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 w-fit border border-emerald-100">🟢 Internal</span>
+                                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 rounded-full px-2 py-0.5 w-fit border border-emerald-100">Internal</span>
                               )}
                               {alloc.assignments.some(a => a.type === 'external') && (
-                                <span className="text-[9px] font-bold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5 w-fit border border-blue-100">🔵 External</span>
+                                <span className="text-xs font-bold text-blue-700 bg-blue-50 rounded-full px-2 py-0.5 w-fit border border-blue-100">External</span>
                               )}
                               {alloc.tbdBW > 0 && (
-                                <span className="text-[9px] font-bold text-amber-600 bg-amber-50 rounded-full px-2 py-0.5 w-fit border border-amber-100">⚪ TBD</span>
+                                <span className="text-xs font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5 w-fit border border-amber-100">TBD</span>
                               )}
                             </div>
                           </td>
                           <td className="px-4 py-3">
                             {alloc.status === 'matched' && alloc.tbdBW === 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50/50 px-2.5 py-1 rounded-lg w-fit border border-emerald-100/50"><CheckCircle2 size={13} /> Matched</span>
+                              <span className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg w-fit border border-emerald-100">✔ Matched</span>
                             )}
                             {alloc.status === 'partial' && alloc.tbdBW === 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-blue-50/50 px-2.5 py-1 rounded-lg w-fit border border-blue-100/50"><CheckCircle2 size={13} /> Partial</span>
+                              <span className="flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg w-fit border border-blue-100">Partial</span>
                             )}
                             {alloc.tbdBW > 0 && (
-                              <span className="flex items-center gap-1 text-[11px] font-bold text-amber-600 bg-amber-50/50 px-2.5 py-1 rounded-lg w-fit border border-amber-100/50"><HelpCircle size={13} /> Open</span>
+                              <span className="flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-lg w-fit border border-amber-100">Open</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-right">
@@ -1360,13 +1497,12 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                 setSelectedAllocId(alloc.resourceId)
                                 document.getElementById('allocation-refinement')?.scrollIntoView({ behavior: 'smooth' })
                               }}
-                              className={`p-1.5 rounded-lg transition-all ${selectedAllocId === alloc.resourceId
-                                  ? 'bg-amber-100 text-amber-600 shadow-inner'
-                                  : 'bg-gray-50 text-gray-400 hover:bg-blue-50 hover:text-blue-600'
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${selectedAllocId === alloc.resourceId
+                                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
                                 }`}
-                              title="Edit Allocation"
                             >
-                              <Pencil size={14} />
+                              {selectedAllocId === alloc.resourceId ? 'Selected' : 'Edit Mapping'}
                             </button>
                           </td>
                         </tr>
@@ -1384,55 +1520,84 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   </div>
                   <div>
                     <p className="text-sm font-bold text-gray-900">Allocation Refinement Manager</p>
-                    <p className="text-xs text-gray-400">Manually override any slot or assign consultants/partners to fill gaps</p>
+                    <p className="text-xs text-gray-600">Manually override any slot or assign consultants/partners to fill gaps</p>
+                    {selectedAllocation && (
+                      <p className="text-xs font-semibold text-blue-700 mt-0.5">
+                        Mapped to: {selectedAllocation.role} ({getCoveragePct(selectedAllocation)}%)
+                      </p>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-sm" style={{ minHeight: 480 }}>
+                <div className="flex rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-sm" style={{ minHeight: 560 }}>
                   {/* Left Panel: All Slots */}
                   <div className="w-64 border-r border-gray-100 bg-gray-50/40 flex-shrink-0 flex flex-col">
-                    <div className="px-4 py-3 border-b border-gray-100 bg-gray-100/30 font-bold text-[10px] text-gray-500 uppercase tracking-widest text-center">
-                      Resource Slots
+                    <div className="px-4 py-3 border-b border-gray-100 bg-gray-100/30 font-bold text-xs text-gray-600 uppercase tracking-widest text-center">
+                      Resource Slot Progress
                     </div>
                       <div className="flex-1 overflow-y-auto p-2.5 space-y-2 custom-scrollbar">
                         {allocations.map((alloc, i) => {
                           const isActive = selectedAllocId === alloc.resourceId
-                          const isTbd = alloc.tbdBW > 0
-                          const isMatched = !isTbd
+                          const state = getAllocationState(alloc)
+                          const coverage = getCoveragePct(alloc)
                           
                           let cardCls = 'bg-white border border-gray-100 text-gray-700 hover:border-gray-200'
                           let badgeCls = 'bg-gray-100 text-gray-500'
+                          let statusLabel = 'Open'
+                          let statusIcon: ReactNode = <HelpCircle size={12} className="text-rose-500" />
                           
                           if (isActive) {
-                            cardCls = 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 border-emerald-600'
+                            cardCls = 'bg-blue-600 text-white shadow-lg shadow-blue-200 border-blue-600'
                             badgeCls = 'bg-white/20 text-white'
-                          } else if (isTbd) {
-                            cardCls = 'bg-amber-50/50 border-amber-200 text-amber-800 hover:bg-amber-100/50'
-                            badgeCls = 'bg-amber-100 text-amber-600'
-                          } else if (isMatched) {
-                            cardCls = 'bg-blue-50/50 border-blue-200 text-blue-800 hover:bg-blue-100/50'
-                            badgeCls = 'bg-blue-100 text-blue-600'
+                          }
+
+                          if (state === 'matched') {
+                            if (!isActive) {
+                              cardCls = 'bg-emerald-50/60 border-emerald-200 text-emerald-900 hover:bg-emerald-100/60'
+                            }
+                            badgeCls = isActive ? badgeCls : 'bg-emerald-100 text-emerald-700'
+                            statusLabel = 'Matched'
+                            statusIcon = <CheckCircle2 size={12} className={isActive ? 'text-white' : 'text-emerald-600'} />
+                          } else if (state === 'partial') {
+                            if (!isActive) {
+                              cardCls = 'bg-amber-50/60 border-amber-200 text-amber-900 hover:bg-amber-100/60'
+                            }
+                            badgeCls = isActive ? badgeCls : 'bg-amber-100 text-amber-700'
+                            statusLabel = 'Partial'
+                            statusIcon = <AlertTriangle size={12} className={isActive ? 'text-white' : 'text-amber-600'} />
+                          } else {
+                            if (!isActive) {
+                              cardCls = 'bg-rose-50/60 border-rose-200 text-rose-900 hover:bg-rose-100/60'
+                            }
+                            badgeCls = isActive ? badgeCls : 'bg-rose-100 text-rose-700'
+                            statusLabel = 'Open'
+                            statusIcon = <HelpCircle size={12} className={isActive ? 'text-white' : 'text-rose-600'} />
                           }
 
                           return (
                             <button key={alloc.resourceId}
                               onClick={() => setSelectedAllocId(alloc.resourceId)}
-                              className={`w-full text-left rounded-xl px-3 py-3 transition-all space-y-1 relative group overflow-hidden ${cardCls}`}
+                              className={`w-full text-left rounded-xl px-3 py-3 transition-all space-y-2 relative group overflow-hidden ${cardCls}`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className={`text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-emerald-100' : 'text-gray-400'}`}>
+                                <span className={`text-xs font-bold uppercase tracking-wider ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
                                   Slot {i + 1}
                                 </span>
-                                <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 border border-current/10 ${badgeCls}`}>
-                                  {isTbd ? `${alloc.tbdBW}% Open` : 'Matched'}
+                                <span className={`text-xs font-bold rounded-full px-2 py-0.5 border border-current/10 inline-flex items-center gap-1 ${badgeCls}`}>
+                                  {statusIcon}
+                                  {statusLabel}
                                 </span>
                               </div>
-                              <p className="text-xs font-bold leading-tight truncate pr-4">{alloc.role}</p>
-                              {isActive && (
-                                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-emerald-100">
-                                  <ChevronRight size={14} />
-                                </div>
-                              )}
+                              <p className="text-[13px] font-bold leading-tight truncate">{alloc.role}</p>
+                              <div className="w-full bg-white/50 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${state === 'matched' ? 'bg-emerald-500' : state === 'partial' ? 'bg-amber-500' : 'bg-rose-500'}`}
+                                  style={{ width: `${coverage}%` }}
+                                />
+                              </div>
+                              <p className={`text-xs font-semibold ${isActive ? 'text-white/90' : 'text-gray-600'}`}>
+                                {coverage}% mapped
+                              </p>
                             </button>
                           )
                         })}
@@ -1451,18 +1616,17 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                       )
                       const res = resources.find(r => r.id === selectedAllocId)!
 
-                      // Scorers
-                      const internalCands = (internalData as any).employees
-                        .map((emp: any) => ({ emp, ...scoreEmployee(emp, res.skills), avail: estAvailBW(emp, {}) }))
-                        .filter((c: any) => c.score >= 10 && c.avail > 0)
-                        .sort((a: any, b: any) => b.score - a.score)
+                      // Internal candidates come from backend; external stay static
+                      const internalCands = refinementResults.filter(m => m.composite_score >= 10 || m.available_bandwidth > 0)
 
                       const extAll = (externalData as any).companies
                         .map((c: any) => ({ c, ...scoreExternal(c, res.skills) }))
                         .filter((x: any) => x.score >= 10)
                         .sort((a: any, b: any) => b.score - a.score)
 
-                      const activeList = searchTab === 'Internal Team' ? internalCands : extAll.filter(x => (x.c.Type || 'External Partner') === searchTab)
+                      const activeList = searchTab === 'Internal Team'
+                        ? internalCands
+                        : extAll.filter((x: any) => (x.c.Type || 'External Partner') === searchTab)
 
                       return (
                         <>
@@ -1472,28 +1636,28 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                                 <p className="text-sm font-bold text-gray-900">
                                   Refining Slot: <span className="text-blue-600">{sel.role}</span>
                                 </p>
-                                <p className="text-[11px] text-gray-500 mt-0.5 truncate max-w-md italic">
+                                <p className="text-xs text-gray-600 mt-0.5 truncate max-w-md italic">
                                   {getTbdReason(sel, res)}
                                 </p>
                               </div>
                               <div className="flex-shrink-0 flex items-center gap-2">
                                 <Search size={14} className="text-gray-400" />
-                                <span className="text-[10px] font-bold text-gray-600 border border-gray-100 bg-gray-50 px-2 py-0.5 rounded-full">Manual Override</span>
+                                <span className="text-xs font-bold text-gray-600 border border-gray-100 bg-gray-50 px-2 py-0.5 rounded-full">Manual Override</span>
                               </div>
                             </div>
 
                             {/* Triple Tabs */}
                             <div className="flex gap-6">
                               {[
-                                { id: 'Internal Team', label: 'Internal Team', count: internalCands.length },
-                                { id: 'External Consultant', label: 'Consultants', count: extAll.filter(x => x.c.Type === 'External Consultant').length },
-                                { id: 'External Partner', label: 'Partners', count: extAll.filter(x => (x.c.Type || 'External Partner') === 'External Partner').length }
+                                { id: 'Internal Team', label: 'Internal Team', count: refinementLoading ? '…' : internalCands.length },
+                                { id: 'External Consultant', label: 'Consultants', count: extAll.filter((x: any) => x.c.Type === 'External Consultant').length },
+                                { id: 'External Partner', label: 'Partners', count: extAll.filter((x: any) => (x.c.Type || 'External Partner') === 'External Partner').length }
                               ].map(t => (
                                 <button key={t.id} onClick={() => setSearchTab(t.id as any)}
-                                  className={`relative py-3 text-xs font-bold transition-all ${searchTab === t.id ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}>
+                                  className={`relative py-3.5 text-sm font-bold transition-all ${searchTab === t.id ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
                                   <div className="flex items-center gap-2">
                                     {t.label}
-                                    <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${searchTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{t.count}</span>
+                                    <span className={`text-sm rounded-full px-2 py-0.5 ${searchTab === t.id ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{t.count}</span>
                                   </div>
                                   {searchTab === t.id && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />}
                                 </button>
@@ -1502,7 +1666,12 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                           </div>
 
                           <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar bg-gray-50/20">
-                            {activeList.length === 0 ? (
+                            {searchTab === 'Internal Team' && refinementLoading ? (
+                              <div className="flex flex-col items-center justify-center h-48 text-gray-400 opacity-60">
+                                <div className="w-8 h-8 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin mb-3" />
+                                <p className="text-sm font-medium">Loading team members…</p>
+                              </div>
+                            ) : activeList.length === 0 ? (
                               <div className="flex flex-col items-center justify-center h-48 text-gray-400 opacity-60">
                                 <Search size={32} className="mb-2" />
                                 <p className="text-sm font-medium">No matches in {searchTab}</p>
@@ -1510,13 +1679,18 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                             ) : (
                               activeList.map((cand: any) => (
                                 searchTab === 'Internal Team' ? (
-                                  <div key={cand.emp.ID} className="relative group">
-                                    <EmpCard emp={cand.emp} score={cand.score} matched={cand.matched} partial={cand.partial} avail={cand.avail} />
-                                    <div className="absolute top-3 right-12 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button onClick={() => assignInternalS3(selectedAllocId!, cand.emp)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-sm">Assign Internal</button>
-                                    </div>
-                                  </div>
+                                  <EmpCard
+                                    key={(cand as ResourceSearchMember).id}
+                                    member={cand as ResourceSearchMember}
+                                    assignAction={
+                                      <button
+                                        onClick={() => assignInternalS3(selectedAllocId!, cand as ResourceSearchMember)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm"
+                                      >
+                                        Assign
+                                      </button>
+                                    }
+                                  />
                                 ) : (
                                   <ExternalCard
                                     key={cand.c['Company Name'] + (cand.c['Contact Person'] || '')}
@@ -1544,9 +1718,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <div>
                     <p className="text-sm font-bold text-gray-900">
                       {projectName || 'New Project'}
-                      {client && <span className="text-gray-400 font-normal ml-1.5">· {client}</span>}
+                      {client && <span className="text-gray-600 font-normal ml-1.5">· {client}</span>}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-gray-600 mt-0.5">
                       {milestones.length} milestones
                       {milestones[0] ? ` · ${fmtDate(milestones[0].startDate)} → ${fmtDate(milestones[milestones.length - 1]?.endDate)}` : ''}
                       {' · '}{resources.length} resource slots
@@ -1555,15 +1729,15 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                   <div className="flex items-center gap-6 text-center">
                     <div>
                       <p className="text-lg font-bold text-emerald-600">{allocations.reduce((acc, a) => acc + a.assignments.filter(as => as.type === 'internal').length, 0)}</p>
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Internal</p>
+                      <p className="text-xs text-gray-500 uppercase font-bold tracking-wide">Internal</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-blue-600">{allocations.reduce((acc, a) => acc + a.assignments.filter(as => as.type === 'external').length, 0)}</p>
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">External</p>
+                      <p className="text-xs text-gray-500 uppercase font-bold tracking-wide">External</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-amber-500">{allocations.filter(a => a.tbdBW > 0).length}</p>
-                      <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide">Open Slots</p>
+                      <p className="text-xs text-gray-500 uppercase font-bold tracking-wide">Open Slots</p>
                     </div>
                   </div>
                 </div>
@@ -1590,15 +1764,25 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
             <div className="flex items-center gap-3">
               {step === 's1' && (
-                <button onClick={() => setStep('s2')}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
+                <button 
+                  onClick={() => {
+                    if (!projectName || !client) {
+                      toast.error("Please provide both Project Name and Client Name to proceed.");
+                      return;
+                    }
+                    setStep('s2');
+                  }}
+                  className={`flex items-center gap-2 rounded-lg text-white px-5 py-2.5 text-sm font-bold transition-all shadow-sm ${(!projectName || !client) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'}`}
+                >
                   Next: Resource Search <ChevronRight size={15} />
                 </button>
               )}
               {step === 's2' && (
-                <button onClick={proceedToStep3}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
-                  <Zap size={14} /> Run Auto Allocation
+                <button onClick={proceedToStep3} disabled={allocLoading}
+                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
+                  {allocLoading
+                    ? <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Allocating…</>
+                    : <><Zap size={14} /> Run Auto Allocation</>}
                 </button>
               )}
               {step === 's3' && (

@@ -7,7 +7,7 @@ import { useProjects, useTeamMembers, useAssignments, useClients, TeamMember } f
 import { api } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, Trash2, Check, Loader2 } from "lucide-react";
+import { Plus, X, Trash2, Check, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
@@ -85,20 +85,46 @@ const Resources = () => {
     return "bg-destructive";
   };
 
-  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [] as string[] });
+  const [newMember, setNewMember] = useState({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [] as string[], skills: [] as string[] });
+  const [suggestedSkills, setSuggestedSkills] = useState<any>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const fetchSuggestedSkills = async (title: string) => {
+    if (!title.trim()) return;
+    setLoadingSuggestions(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/designations/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ designation: title })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestedSkills(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch skills", err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
 
   const handleAddMember = async () => {
     const initials = newMember.name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2);
     const colors = ["#3CBFB0", "#60A5FA", "#C084FC", "#F59E0B", "#22C55E", "#FB923C", "#E8253A", "#F472B6"];
     const color = colors[Math.floor(Math.random() * colors.length)];
+    setIsSubmitting(true);
     const { data, error } = await api.from("team_members").insert({
       name: newMember.name, role: newMember.role, reports_to: newMember.reportsTo || null,
       member_type: newMember.memberType, resource_type: newMember.resourceType || "Internal",
       vendor: newMember.resourceType === "External" ? newMember.vendor : null,
       engagement_pct: newMember.engagementPct,
       initials, color_hex: color,
+      skills: newMember.skills,
     }).select().single();
-    if (error) { toast.error("Failed to add member"); return; }
+    if (error) { toast.error("Failed to add member"); setIsSubmitting(false); return; }
     await writeAuditLog("team_members", data.id, "INSERT", null, data);
     for (const pId of newMember.projectIds) {
       const { data: a } = await api.from("project_assignments").insert({ project_id: pId, team_member_id: data.id }).select().single();
@@ -107,8 +133,10 @@ const Resources = () => {
     qc.invalidateQueries({ queryKey: ["team_members"] });
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
     toast.success(`✓ Member added · ${new Date().toLocaleTimeString()}`);
+    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [], skills: [] });
+    setSuggestedSkills(null);
     setShowAddMember(false);
-    setNewMember({ name: "", role: "", reportsTo: "", memberType: "Full-time", resourceType: "Internal", vendor: "", engagementPct: 50, projectIds: [] });
+    setIsSubmitting(false);
   };
 
   const handleToggleAssignment = async (memberId: string, projectId: string) => {
@@ -429,68 +457,95 @@ const Resources = () => {
         </div>
         */}
 
-        {/* Add Member Modal */}
-        <FormModal title="Add Team Member" isOpen={showAddMember} onClose={() => setShowAddMember(false)}>
-          <FormSection>
-            <FormInput
-              label="Full Name"
-              value={newMember.name}
-              onChange={(v) => setNewMember({ ...newMember, name: v })}
-              placeholder="John Doe"
-              required
-            />
-            <FormInput
-              label="Role"
-              value={newMember.role}
-              onChange={(v) => setNewMember({ ...newMember, role: v })}
-              placeholder="Senior Developer"
-              required
-            />
-            <FormInput
-              label="Reports To"
-              value={newMember.reportsTo}
-              onChange={(v) => setNewMember({ ...newMember, reportsTo: v })}
-              placeholder="Manager name or ID"
-            />
-          </FormSection>
-          <FormSection title="Assignment">
-            <FormSelect
-              label="Member Type"
-              value={newMember.memberType}
-              onChange={(v) => setNewMember({ ...newMember, memberType: v })}
-              options={["Full-time", "Consultant", "Intern", "Trainee"]}
-              required
-            />
-            <FormSelect
-              label="Resource Type"
-              value={newMember.resourceType}
-              onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
-              options={["Internal", "Consultant", "External"]}
-              required
-            />
-            {newMember.resourceType === "External" && (
+        <FormModal title="Add Team Member" isOpen={showAddMember} onClose={() => setShowAddMember(false)} maxWidth="max-w-2xl">
+          <div className="grid grid-cols-2 gap-6">
+            <FormSection title="Identity">
               <FormInput
-                label="Vendor Name"
-                value={newMember.vendor}
-                onChange={(v) => setNewMember({ ...newMember, vendor: v })}
-                placeholder="Enter vendor name"
+                label="Full Name"
+                value={newMember.name}
+                onChange={(v) => setNewMember({ ...newMember, name: v })}
+                placeholder="John Doe"
                 required
               />
-            )}
-          </FormSection>
-          <FormSection title="Projects">
-            <FormCheckboxGroup
-              label="Assign to Projects"
-              items={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
-              selectedIds={newMember.projectIds}
-              onChange={(ids) => setNewMember({ ...newMember, projectIds: ids })}
+              <FormInput
+                label="Role / Designation"
+                value={newMember.role}
+                onChange={(v) => setNewMember({ ...newMember, role: v })}
+                onBlur={() => fetchSuggestedSkills(newMember.role)}
+                placeholder="e.g. Senior Developer"
+                required
+              />
+              <FormInput
+                label="Reports To"
+                value={newMember.reportsTo}
+                onChange={(v) => setNewMember({ ...newMember, reportsTo: v })}
+                placeholder="Manager Name or ID"
+              />
+            </FormSection>
+
+            <FormSection title="Skills & Profile">
+              <SkillsSelector
+                selectedSkills={newMember.skills}
+                suggestedSkills={suggestedSkills}
+                isLoading={loadingSuggestions}
+                currentRole={newMember.role}
+                onGenerate={() => fetchSuggestedSkills(newMember.role)}
+                onAddSkill={(s) => setNewMember(prev => ({ ...prev, skills: [...prev.skills, s] }))}
+                onRemoveSkill={(s) => setNewMember(prev => ({ ...prev, skills: prev.skills.filter(sk => sk !== s) }))}
+              />
+            </FormSection>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6 border-t border-gray-100 pt-6 mt-2">
+            <FormSection title="Type & Vendor">
+              <div className="grid grid-cols-2 gap-3">
+                <FormSelect
+                  label="Member Type"
+                  value={newMember.memberType}
+                  onChange={(v) => setNewMember({ ...newMember, memberType: v })}
+                  options={["Full-time", "Consultant", "Intern", "Trainee"]}
+                  required
+                />
+                <FormSelect
+                  label="Resource Type"
+                  value={newMember.resourceType}
+                  onChange={(v) => setNewMember({ ...newMember, resourceType: v })}
+                  options={["Internal", "Consultant", "External"]}
+                  required
+                />
+              </div>
+              {newMember.resourceType === "External" && (
+                <div className="mt-3 animate-in fade-in slide-in-from-top-2">
+                  <FormInput
+                    label="Vendor Name"
+                    value={newMember.vendor}
+                    onChange={(v) => setNewMember({ ...newMember, vendor: v })}
+                    placeholder="Enter vendor name"
+                    required
+                  />
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection title="Project Alignment">
+              <FormCheckboxGroup
+                label="Select Projects"
+                items={projects?.map((p) => ({ id: p.id, name: p.name })) || []}
+                selectedIds={newMember.projectIds}
+                onChange={(ids) => setNewMember({ ...newMember, projectIds: ids })}
+                maxHeight="max-h-[120px]"
+              />
+            </FormSection>
+          </div>
+
+          <div className="border-t border-gray-100 pt-6 mt-4">
+            <FormActions
+              onSubmit={handleAddMember}
+              onCancel={() => setShowAddMember(false)}
+              submitLabel="Add Member"
+              isLoading={isSubmitting}
             />
-          </FormSection>
-          <FormActions
-            onSubmit={handleAddMember}
-            onCancel={() => setShowAddMember(false)}
-            submitLabel="Add Member"
-          />
+          </div>
         </FormModal>
 
         {editMember && members && (
@@ -521,6 +576,142 @@ const Resources = () => {
   );
 };
 
+const SkillsSelector = ({ selectedSkills, suggestedSkills, isLoading, currentRole, onGenerate, onAddSkill, onRemoveSkill }: { 
+  selectedSkills: string[]; 
+  suggestedSkills: any; 
+  isLoading: boolean;
+  currentRole?: string;
+  onGenerate?: () => void;
+  onAddSkill: (s: string) => void; 
+  onRemoveSkill: (s: string) => void 
+}) => {
+  const [customSkill, setCustomSkill] = useState("");
+
+  const handleAddCustom = () => {
+    if (customSkill.trim() && !selectedSkills.includes(customSkill.trim())) {
+      onAddSkill(customSkill.trim());
+      setCustomSkill("");
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
+        Skills
+      </label>
+      <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl border border-gray-300 bg-white shadow-inner min-h-[46px] transition-all hover:border-blue-300 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/10">
+        {selectedSkills.map(s => (
+          <span key={s} className="flex items-center gap-1 rounded-full bg-blue-600 text-white text-[10px] font-bold px-2.5 py-1 shadow-md animate-in zoom-in-50">
+            {s}
+            <button onClick={() => onRemoveSkill(s)} className="hover:text-red-200 transition-colors ml-0.5">
+              <X size={10} />
+            </button>
+          </span>
+        ))}
+        <input
+          value={customSkill}
+          onChange={(e) => setCustomSkill(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === ",") {
+              e.preventDefault();
+              handleAddCustom();
+            }
+          }}
+          placeholder={selectedSkills.length === 0 ? "Type a skill and press Enter..." : "Add more..."}
+          className="flex-1 bg-transparent border-none outline-none text-xs text-gray-900 placeholder-gray-400 min-w-[120px]"
+        />
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center gap-2 px-1 py-1 bg-blue-50/50 rounded-lg animate-pulse">
+          <Loader2 size={12} className="animate-spin text-blue-500" />
+          <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Generating suggestions...</span>
+        </div>
+      )}
+
+      {!isLoading && !suggestedSkills && currentRole && currentRole.length > 3 && onGenerate && (
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGenerate(); }}
+          className="group w-full flex items-center justify-between gap-2 p-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300 shadow-sm"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500 text-white shadow-blue-200 shadow-lg group-hover:scale-110 transition-transform">
+              <Sparkles size={14} />
+            </div>
+            <p className="text-xs font-bold text-blue-900">Want to generate suggested skills for <span className="text-blue-600 underline decoration-blue-300 underline-offset-2 italic">{currentRole}</span>?</p>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-md shadow-blue-600/20 group-hover:bg-blue-700">
+            Generate <Wand2 size={11} />
+          </div>
+        </button>
+      )}
+
+      {suggestedSkills && (
+        <div className="space-y-4 p-5 rounded-2xl border border-blue-100 bg-white shadow-xl shadow-blue-500/5 animate-in fade-in slide-in-from-top-2 duration-500 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+          <div className="flex items-center justify-between border-b border-blue-100 pb-3 mb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 text-blue-600 shadow-inner">
+                <Sparkles size={12} />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest block leading-none">AI Suggestions</span>
+                <span className="text-[8px] font-medium text-gray-400 uppercase tracking-tighter">Based on {suggestedSkills.designation}</span>
+              </div>
+            </div>
+            {onGenerate && (
+              <button 
+                onClick={(e) => { e.preventDefault(); onGenerate(); }} 
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-blue-50 text-[10px] font-bold text-blue-500 transition-colors"
+              >
+                <Wand2 size={10} /> Refresh
+              </button>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-1 gap-5 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+            {[
+              { key: "technical_skills", label: "Technical Mastery", color: "text-blue-600", bg: "bg-blue-500/10", icon: "T" },
+              { key: "tools_and_technologies", label: "Tools & Ecosystem", color: "text-indigo-600", bg: "bg-indigo-500/10", icon: "E" },
+              { key: "soft_skills", label: "Core Soft Skills", color: "text-emerald-600", bg: "bg-emerald-500/10", icon: "S" },
+              { key: "domain_knowledge", label: "Domain Expertise", color: "text-amber-600", bg: "bg-amber-500/10", icon: "D" },
+              { key: "certifications", label: "Key Certifications", color: "text-purple-600", bg: "bg-purple-500/10", icon: "C" }
+            ].map(cat => {
+              const skills = suggestedSkills[cat.key] || [];
+              if (skills.length === 0) return null;
+              const available = skills.filter((s: string) => !selectedSkills.includes(s));
+              if (available.length === 0) return null;
+
+              return (
+                <div key={cat.key} className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-4 w-4 items-center justify-center rounded text-[8px] font-bold ${cat.color} ${cat.bg}`}>
+                      {cat.icon}
+                    </div>
+                    <p className={`text-[10px] font-extrabold uppercase tracking-tight ${cat.color}`}>{cat.label}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pl-0.5">
+                    {available.map((s: string) => (
+                      <button
+                        key={s}
+                        onClick={(e) => { e.preventDefault(); onAddSkill(s); }}
+                        className="group relative flex items-center gap-1.5 text-[10px] font-bold px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-gray-600 hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 shadow-sm"
+                      >
+                        <Plus size={10} className="text-gray-300 group-hover:text-blue-500 transition-colors" />
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { members: any[]; projects: any[]; assignments: any[]; onClose: () => void; qc: any }) => {
   const primaryMember = members[0];
   const [form, setForm] = useState({
@@ -530,9 +721,33 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
     memberType: primaryMember.member_type || "Full-time",
     resourceType: primaryMember.resource_type || "Internal",
     vendor: primaryMember.vendor || "",
-    engagementPct: primaryMember.engagement_pct || 50
+    engagementPct: primaryMember.engagement_pct || 50,
+    skills: primaryMember.skills || [] as string[]
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [suggestedSkills, setSuggestedSkills] = useState<any>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  const fetchSuggestedSkills = async (title: string) => {
+    if (!title.trim()) return;
+    setLoadingSuggestions(true);
+    try {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/api/designations/skills`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ designation: title })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestedSkills(data);
+      }
+    } catch (err) {
+      console.error("Fetch failed", err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
   const [localAssignments, setLocalAssignments] = useState<{ id: string; projectName: string; role: string; memberId: string }[]>([]);
 
   useEffect(() => {
@@ -563,12 +778,13 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
       member_type: form.memberType,
       resource_type: form.resourceType || "Internal",
       vendor: form.resourceType === "External" ? form.vendor : null,
-      engagement_pct: form.engagementPct
+      engagement_pct: form.engagementPct,
+      skills: form.skills
     };
 
     // Update all member records in the group
     for (const member of members) {
-      const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, resource_type: member.resource_type, vendor: member.vendor, engagement_pct: member.engagement_pct };
+      const oldValues = { name: member.name, role: member.role, reports_to: member.reports_to, member_type: member.member_type, resource_type: member.resource_type, vendor: member.vendor, engagement_pct: member.engagement_pct, skills: member.skills };
       const { error: memberError } = await api.from("team_members").update(newValues).eq("id", member.id);
       if (!memberError) {
         await writeAuditLog("team_members", member.id, "UPDATE", oldValues, newValues);
@@ -600,90 +816,116 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
   };
 
   return (
-    <FormModal title="Edit Member" isOpen={true} onClose={onClose}>
-      <FormSection>
-        <FormInput
-          label="Name"
-          value={form.name}
-          onChange={(v) => setForm({ ...form, name: v })}
-          disabled={isLoading}
-          required
-        />
-        <FormInput
-          label="Role"
-          value={form.role}
-          onChange={(v) => setForm({ ...form, role: v })}
-          disabled={isLoading}
-          required
-        />
-        <FormInput
-          label="Reports To"
-          value={form.reportsTo}
-          onChange={(v) => setForm({ ...form, reportsTo: v })}
-          disabled={isLoading}
-        />
-      </FormSection>
+    <FormModal title="Edit Member" isOpen={true} onClose={onClose} maxWidth="max-w-3xl">
+      <div className="grid grid-cols-2 gap-8">
+        <div className="space-y-6">
+          <FormSection title="Basic Information">
+            <FormInput
+              label="Name"
+              value={form.name}
+              onChange={(v) => setForm({ ...form, name: v })}
+              disabled={isLoading}
+              required
+            />
+            <FormInput
+              label="Role"
+              value={form.role}
+              onChange={(v) => setForm({ ...form, role: v })}
+              onBlur={() => fetchSuggestedSkills(form.role)}
+              disabled={isLoading}
+              required
+            />
+            <FormInput
+              label="Reports To"
+              value={form.reportsTo}
+              onChange={(v) => setForm({ ...form, reportsTo: v })}
+              disabled={isLoading}
+            />
+          </FormSection>
 
-      {localAssignments.length > 0 && (
-        <FormSection title="Project Designations">
-          <div className="space-y-4 pt-2">
-            {localAssignments.map((la, idx) => (
-              <div key={la.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Project</span>
-                  <span className="text-[11px] font-bold text-gray-800 bg-white px-2 py-0.5 rounded border border-gray-200 shadow-sm">{la.projectName}</span>
-                </div>
+          <FormSection title="Contractual Details">
+            <div className="grid grid-cols-2 gap-4">
+              <FormSelect
+                label="Member Type"
+                value={form.memberType}
+                onChange={(v) => setForm({ ...form, memberType: v })}
+                options={["Full-time", "Consultant", "Intern", "Trainee"]}
+                disabled={isLoading}
+                required
+              />
+              <FormSelect
+                label="Resource Type"
+                value={form.resourceType}
+                onChange={(v) => setForm({ ...form, resourceType: v })}
+                options={["Internal", "Consultant", "External"]}
+                disabled={isLoading}
+                required
+              />
+            </div>
+            {form.resourceType === "External" && (
+              <div className="mt-3">
                 <FormInput
-                  label="Specific Role / Designation"
-                  value={la.role}
-                  onChange={(v) => {
-                    const newLA = [...localAssignments];
-                    newLA[idx].role = v;
-                    setLocalAssignments(newLA);
-                  }}
+                  label="Vendor Name"
+                  value={form.vendor}
+                  onChange={(v) => setForm({ ...form, vendor: v })}
                   disabled={isLoading}
-                  placeholder="e.g. Lead Developer, QA Tester"
+                  placeholder="Enter vendor name"
+                  required
                 />
               </div>
-            ))}
-          </div>
-        </FormSection>
-      )}
+            )}
+          </FormSection>
+        </div>
 
-      <FormSection title="Assignment">
-        <FormSelect
-          label="Member Type"
-          value={form.memberType}
-          onChange={(v) => setForm({ ...form, memberType: v })}
-          options={["Full-time", "Consultant", "Intern", "Trainee"]}
-          disabled={isLoading}
-          required
+        <div className="space-y-6">
+          <FormSection title="Skills Registry">
+            <SkillsSelector
+              selectedSkills={form.skills}
+              suggestedSkills={suggestedSkills}
+              isLoading={loadingSuggestions}
+              currentRole={form.role}
+              onGenerate={() => fetchSuggestedSkills(form.role)}
+              onAddSkill={(s) => setForm(prev => ({ ...prev, skills: [...prev.skills, s] }))}
+              onRemoveSkill={(s) => setForm(prev => ({ ...prev, skills: prev.skills.filter(sk => sk !== s) }))}
+            />
+          </FormSection>
+          
+          {localAssignments.length > 0 && (
+            <FormSection title="Active Project Assignments">
+              <div className="space-y-3 pt-1">
+                {localAssignments.map((la, idx) => (
+                  <div key={la.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50/80 shadow-sm">
+                    <div className="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
+                       <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Designation on Project</p>
+                       <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">{la.projectName}</span>
+                    </div>
+                    <FormInput
+                      label=""
+                      value={la.role}
+                      onChange={(v) => {
+                        const newLA = [...localAssignments];
+                        newLA[idx].role = v;
+                        setLocalAssignments(newLA);
+                      }}
+                      disabled={isLoading}
+                      placeholder="e.g. Lead Developer, QA Tester"
+                    />
+                  </div>
+                ))}
+              </div>
+            </FormSection>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8 border-t border-gray-100 pt-6">
+        <FormActions
+          onSubmit={handleSave}
+          onCancel={onClose}
+          submitLabel="Update Resource Profile"
+          isLoading={isLoading}
         />
-        <FormSelect
-          label="Resource Type"
-          value={form.resourceType}
-          onChange={(v) => setForm({ ...form, resourceType: v })}
-          options={["Internal", "Consultant", "External"]}
-          disabled={isLoading}
-          required
-        />
-        {form.resourceType === "External" && (
-          <FormInput
-            label="Vendor Name"
-            value={form.vendor}
-            onChange={(v) => setForm({ ...form, vendor: v })}
-            disabled={isLoading}
-            placeholder="Enter vendor name"
-            required
-          />
-        )}
-      </FormSection>
-      <FormActions
-        onSubmit={handleSave}
-        onCancel={onClose}
-        submitLabel="Save Changes"
-        isLoading={isLoading}
-      />
+      </div>
     </FormModal>
   );
 };

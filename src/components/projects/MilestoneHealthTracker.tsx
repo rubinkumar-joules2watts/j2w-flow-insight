@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { MilestoneHealthData, MilestoneHealthPhase, WeekData, Milestone, useDeleteMilestonePracticeStatus } from "@/hooks/useData";
 import { Loader2, Pencil, Plus as PlusIcon, Trash2 } from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 interface MilestoneHealthTrackerProps {
   data?: MilestoneHealthData;
@@ -497,14 +498,14 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
           date: modalState.weekDate || (updates.signedoff_date || updates.invoice_raised_date || new Date().toISOString().split("T")[0])
         };
 
-        response = await fetch(`${baseUrl}api/milestones/${modalState.milestoneId}/health/${modalState.type}/week/${modalState.weekNumber}`, {
+        response = await fetch(apiUrl(`api/milestones/${modalState.milestoneId}/health/${modalState.type}/week/${modalState.weekNumber}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(weekPayload),
         });
       } else {
         // API 2: Update milestone-level status (regenerates all weeks)
-        response = await fetch(`${baseUrl}api/milestones/${modalState.milestoneId}/health/${modalState.type}`, {
+        response = await fetch(apiUrl(`api/milestones/${modalState.milestoneId}/health/${modalState.type}`), {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -524,7 +525,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       // Refresh milestone health data immediately from API 1
       if (data?.project_id) {
         try {
-          const healthRes = await fetch(`${baseUrl}api/projects/${data.project_id}/milestone-health`);
+          const healthRes = await fetch(apiUrl(`api/projects/${data.project_id}/milestone-health`));
           if (healthRes.ok) {
             const healthData = await healthRes.json();
             // Update the cache with fresh data

@@ -3,13 +3,13 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
-import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection } from "@/components/common/FormComponents";
+import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection, FormTextarea } from "@/components/common/FormComponents";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth, useEngagement, useUpdateEngagement } from "@/hooks/useData";
 import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTracker";
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload } from "lucide-react";
+import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
 
@@ -172,6 +172,7 @@ const Projects = () => {
   const [confirmDeleteMilestone, setConfirmDeleteMilestone] = useState<string | null>(null);
   const [confirmDeleteProject, setConfirmDeleteProject] = useState<string | null>(null);
   const [confirmDeleteUpdate, setConfirmDeleteUpdate] = useState<string | null>(null);
+  const [editingUpdateRecord, setEditingUpdateRecord] = useState<any>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState("all");
   const [projectStatusFilter, setProjectStatusFilter] = useState("all");
@@ -310,6 +311,26 @@ const Projects = () => {
     showSaved(`${id}-${field}`);
   }, [qc, milestones, selectedId]);
 
+  const updateProjectUpdate = useCallback(async (id: string, field: string, value: unknown, oldVal: unknown) => {
+    const current = projUpdates?.find((u) => u.id === id);
+    if (!current) return;
+
+    const next: Record<string, unknown> = { [field]: value };
+    const { error } = await api.from("project_updates").update(next as any).eq("id", id);
+    if (error) { toast.error("Failed to update timeline"); return; }
+
+    const changedFields = Object.keys(next);
+    const oldValues = changedFields.reduce((acc, key) => {
+      acc[key] = (current as Record<string, unknown>)[key] ?? null;
+      return acc;
+    }, {} as Record<string, unknown>);
+
+    await writeAuditLog("project_updates", id, "UPDATE", oldValues, next, changedFields);
+    qc.invalidateQueries({ queryKey: ["project_updates"] });
+    toast.success(`✓ Timeline updated`);
+    showSaved(`${id}-${field}`);
+  }, [qc, projUpdates]);
+
   const updateMilestoneViaAPI = useCallback(async (milestoneCode: string, field: string, value: string | null) => {
     // Get the milestone UUID from milestone-health API response
     const getMilestoneIdFromHealth = () => {
@@ -437,14 +458,19 @@ const Projects = () => {
     try {
       // 1. Find or create client
       let clientId: string;
-      const clientName = wizardData['Client'] || 'Unknown Client';
+      const clientName = (wizardData['Client'] || '').trim();
+      if (!clientName) {
+        toast.error("Client name is required.");
+        return;
+      }
+
       const existing = clients?.find((c) => c.name.toLowerCase() === clientName.toLowerCase());
       if (existing) {
         clientId = existing.id;
       } else {
-        const { data, error } = await api.from("clients").insert({ name: clientName }).select().single();
-        if (error) { toast.error("Failed to create client"); return; }
-        clientId = data.id;
+        const { data: newClient, error: clientErr } = await api.from("clients").insert({ name: clientName }).select().single();
+        if (clientErr) { toast.error("Failed to create client"); return; }
+        clientId = newClient.id;
         qc.invalidateQueries({ queryKey: ["clients"] });
       }
 
@@ -478,14 +504,30 @@ const Projects = () => {
       // 4. Match and assign internal team members
       const allocations: any[] = wizardData['_allocations'] || [];
       for (const alloc of allocations) {
-        if (alloc.internal?.name) {
-          const match = members?.find((m) => m.name.toLowerCase() === alloc.internal.name.toLowerCase());
-          if (match) {
-            const { data: a } = await api.from("project_assignments").insert({
+        // Iterate through assignments in this slot
+        const slotAssignments = alloc.assignments || [];
+        for (const as of slotAssignments) {
+          if (as.type === 'internal' && as.id) {
+            // 4a. Create project assignment
+            const { data: assignData, error: assignErr } = await api.from("project_assignments").insert({
               project_id: proj.id,
-              team_member_id: match.id,
+              team_member_id: as.id,
+              role_on_project: alloc.role,
+              allocated_hours_per_week: as.bw / (100 / 40) || 8, // Basic estimate or default
             }).select().single();
-            if (a) await writeAuditLog("project_assignments", a.id, "INSERT", null, a);
+
+            if (assignErr) {
+              console.error("Failed to assign:", as.name);
+            } else if (assignData) {
+              await writeAuditLog("project_assignments", assignData.id, "INSERT", null, assignData);
+            }
+
+            // 4b. Upsert team member engagement (default to "0" per request)
+            await api.from("team_members_engagement").insert({
+              team_member_id: as.id,
+              project_id: proj.id,
+              engagement_level: "0"
+            });
           }
         }
       }
@@ -644,7 +686,7 @@ const Projects = () => {
     if (updateId) formData.append("update_id", updateId);
     if (category) formData.append("category", category);
 
-    const response = await fetch(apiUrl("/api/upload"), { method: "POST", body: formData });
+    const response = await fetch(apiUrl("/api/upload_cloud"), { method: "POST", body: formData });
     if (!response.ok) throw new Error("Upload failed");
     qc.invalidateQueries({ queryKey: ["project_documents"] });
     qc.invalidateQueries({ queryKey: ["project_updates"] });
@@ -658,7 +700,11 @@ const Projects = () => {
     else setIsUploading(true);
 
     try {
-      await executeUpload(file, project.id, updateId, "Internal");
+      const category = updateId
+        ? (projUpdates.find(u => u.id === updateId)?.category || "Internal")
+        : "Internal";
+
+      await executeUpload(file, project.id, updateId, category);
       toast.success(updateId ? "Attachment added" : "File uploaded");
     } catch (err) {
       toast.error("Upload failed");
@@ -1215,7 +1261,8 @@ const Projects = () => {
                           .slice().reverse().map((u, idx) => (
                             <div
                               key={u.id}
-                              className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
+                              onClick={() => setEditingUpdateRecord(u)}
+                              className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm cursor-pointer hover:shadow-md hover:ring-1 hover:ring-primary/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
                                 u.category === "Cadence" ? "border-orange-200/60 hover:border-orange-400 hover:shadow-orange-500/5 translate-y-0" :
                                   "border-blue-200/60 hover:border-blue-400 hover:shadow-blue-500/5 translate-y-0"
                                 }`}
@@ -1226,7 +1273,7 @@ const Projects = () => {
                                     "text-blue-600"
                                   }`}>
                                   <Calendar size={10} />
-                                  {new Date(u.activity_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                                  <span>{formatDateReadable(u.activity_date)}</span>
                                   <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[8px] uppercase tracking-wider ${u.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
                                     u.category === "Cadence" ? "bg-orange-100 text-orange-700" :
                                       "bg-blue-100 text-blue-700"
@@ -1236,43 +1283,69 @@ const Projects = () => {
                                 </div>
                                 <div className="flex items-center gap-1">
                                   <button
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingUpdateRecord(u);
+                                    }}
+                                    className="z-10 text-muted-foreground hover:text-blue-500 transition-colors"
+                                    title="Edit details"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setUploadingUpdateId(u.id);
                                       tileFileInputRef.current?.click();
                                     }}
-                                    className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+                                    className="z-10 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
                                     disabled={uploadingUpdateId === u.id}
                                     title="Attach document"
                                   >
                                     {uploadingUpdateId === u.id ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
                                   </button>
                                   <button
-                                    onClick={() => setConfirmDeleteUpdate(u.id)}
-                                    className="text-muted-foreground hover:text-red-400 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setConfirmDeleteUpdate(u.id);
+                                    }}
+                                    className="z-10 text-muted-foreground hover:text-red-400 transition-colors"
                                     title="Delete update"
                                   >
                                     <Trash2 size={14} />
                                   </button>
-                                  <span className="text-[9px] text-muted-foreground bg-secondary/50 px-1.5 py-0.5 rounded-full">
-                                    Manual
-                                  </span>
                                 </div>
                               </div>
-                              <p className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mb-2">
+                              <div
+                                className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mb-2 line-clamp-3 overflow-hidden"
+                                title="Click to view full content"
+                              >
                                 {u.content}
-                              </p>
+                              </div>
 
                               {u.file_path && (
-                                <a
-                                  href={apiUrl(`/api/files/${u.file_path}?download=${encodeURIComponent(u.file_name || "file")}`)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="mt-auto flex items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10"
-                                  title={u.file_name}
-                                >
-                                  <LinkIcon size={8} />
-                                  <span className="truncate max-w-[150px]">{u.file_name}</span>
-                                </a>
+                                <div className="mt-auto flex items-center gap-1.5">
+                                  <a
+                                    href={u.file_path.startsWith('http') ? u.file_path : apiUrl(`/api/files/${u.file_path}`)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex flex-1 items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10 transition-colors"
+                                    title={`View ${u.file_name}`}
+                                  >
+                                    <Eye size={10} />
+                                    <span className="truncate max-w-[100px]">{u.file_name}</span>
+                                  </a>
+                                  <a
+                                    href={u.file_path.startsWith('http') ? u.file_path : apiUrl(`/api/files/${u.file_path}?download=true`)}
+                                    download={u.file_name}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex h-6 w-6 items-center justify-center rounded border border-primary/10 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                                    title={`Download ${u.file_name}`}
+                                  >
+                                    <Download size={10} />
+                                  </a>
+                                </div>
                               )}
 
                               {idx !== 0 && (
@@ -1809,9 +1882,25 @@ const Projects = () => {
                         <td className="px-4 py-2 text-muted-foreground">{(doc.size / 1024 / 1024).toFixed(2)} MB</td>
                         <td className="px-4 py-2 text-muted-foreground">{new Date(doc.created_at).toLocaleDateString()}</td>
                         <td className="px-4 py-2 text-right">
-                          <a href={apiUrl(`/api/files/${doc.path}?download=${encodeURIComponent(doc.name)}`)} download={doc.name} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground">
-                            <Download size={12} />
-                          </a>
+                          <div className="flex items-center justify-end gap-2">
+                            <a
+                              href={doc.path?.startsWith('http') ? doc.path : apiUrl(`/api/files/${doc.path}`)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                              title="View Document"
+                            >
+                              <Eye size={12} />
+                            </a>
+                            <a
+                              href={doc.path?.startsWith('http') ? doc.path : apiUrl(`/api/files/${doc.path}?download=true`)}
+                              download={doc.name}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                              title="Download File"
+                            >
+                              <Download size={12} />
+                            </a>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1986,6 +2075,61 @@ const Projects = () => {
             isLoading={isAddingHierarchyMember}
           />
         </FormModal>
+
+        {/* Timeline Update Modal */}
+        {editingUpdateRecord && (
+          <FormModal
+            title="Edit Timeline Activity"
+            isOpen={!!editingUpdateRecord}
+            onClose={() => setEditingUpdateRecord(null)}
+            maxWidth="max-w-2xl"
+          >
+            <FormSection title="Activity Details">
+              <div className="grid grid-cols-2 gap-4">
+                <FormSelect
+                  label="Category"
+                  value={editingUpdateRecord.category}
+                  options={["Internal", "Sales", "Cadence"]}
+                  onChange={(val) => setEditingUpdateRecord({ ...editingUpdateRecord, category: val })}
+                />
+                <FormInput
+                  label="Activity Date"
+                  type="date"
+                  value={editingUpdateRecord.activity_date}
+                  onChange={(val) => setEditingUpdateRecord({ ...editingUpdateRecord, activity_date: val })}
+                />
+              </div>
+              <FormTextarea
+                label="Timeline Content"
+                rows={10}
+                value={editingUpdateRecord.content}
+                onChange={(val) => setEditingUpdateRecord({ ...editingUpdateRecord, content: val })}
+                placeholder="Describe the activity..."
+              />
+            </FormSection>
+            <FormActions
+              onSubmit={async () => {
+                const orig = projUpdates.find(u => u.id === editingUpdateRecord.id);
+                if (!orig) return;
+
+                // Update each field if changed
+                if (editingUpdateRecord.category !== orig.category) {
+                  await updateProjectUpdate(editingUpdateRecord.id, "category", editingUpdateRecord.category, orig.category);
+                }
+                if (editingUpdateRecord.activity_date !== orig.activity_date) {
+                  await updateProjectUpdate(editingUpdateRecord.id, "activity_date", editingUpdateRecord.activity_date, orig.activity_date);
+                }
+                if (editingUpdateRecord.content !== orig.content) {
+                  await updateProjectUpdate(editingUpdateRecord.id, "content", editingUpdateRecord.content, orig.content);
+                }
+
+                setEditingUpdateRecord(null);
+              }}
+              onCancel={() => setEditingUpdateRecord(null)}
+              submitLabel="Save Changes"
+            />
+          </FormModal>
+        )}
 
         {/* Delete Project Modal */}
         {confirmDeleteProject && (() => {
