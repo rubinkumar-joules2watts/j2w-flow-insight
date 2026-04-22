@@ -41,10 +41,13 @@ export type ProjectUpdate = {
   category?: "Internal" | "Sales" | "Cadence";
   file_path?: string;
   file_name?: string;
+  [key: string]: any;
 };
 export type ProjectDocument = {
   id: string; project_id: string; name: string; type: string; size: number; path: string; created_at: string;
   category?: "Internal" | "Sales" | "Cadence";
+  update_id?: string | null;
+  [key: string]: any;
 };
 
 export type WeekData = {

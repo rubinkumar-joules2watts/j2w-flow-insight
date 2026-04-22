@@ -173,8 +173,88 @@ const Projects = () => {
   const [confirmDeleteProject, setConfirmDeleteProject] = useState<string | null>(null);
   const [confirmDeleteUpdate, setConfirmDeleteUpdate] = useState<string | null>(null);
   const [editingUpdateRecord, setEditingUpdateRecord] = useState<any>(null);
+  const [viewingUpdateRecord, setViewingUpdateRecord] = useState<any>(null);
   const [savedField, setSavedField] = useState<string | null>(null);
   const [projectFilter, setProjectFilter] = useState("all");
+
+  const getUpdateAttachments = (update: ProjectUpdate): ProjectDocument[] => {
+    let attachments: ProjectDocument[] = [];
+    
+    // Helper to extract multiple attachments from any object (Update or Document record)
+    const extractFromObj = (obj: any, baseId: string): ProjectDocument[] => {
+      const found: ProjectDocument[] = [];
+      const keys = Object.keys(obj);
+      
+      // Look for keys matching path, path2, file_path, file_path2, etc.
+      const pathKeys = keys.filter(k => k.match(/^(file_)?path\d*$/)).sort((a, b) => {
+        const numA = parseInt(a.match(/\d+$/)?.[0] || '1');
+        const numB = parseInt(b.match(/\d+$/)?.[0] || '1');
+        if (numA !== numB) return numA - numB;
+        return a.localeCompare(b);
+      });
+
+      pathKeys.forEach(pKey => {
+        const pathValue = obj[pKey];
+        if (!pathValue || typeof pathValue !== 'string') return;
+
+        const suffix = pKey.match(/\d+$/)?.[0] || '';
+        const nameCandidates = [`name${suffix}`, `file_name${suffix}`];
+        let nameValue = "Attachment";
+        for (const cand of nameCandidates) {
+          if (obj[cand]) {
+            nameValue = obj[cand];
+            break;
+          }
+        }
+
+        found.push({
+          id: `${baseId}-${pKey}`,
+          name: nameValue,
+          path: pathValue,
+          project_id: obj.project_id || update.project_id,
+          category: obj.category || update.category,
+          type: obj.type || "unknown",
+          size: obj.size || 0,
+          created_at: obj.created_at || update.created_at
+        } as ProjectDocument);
+      });
+      return found;
+    };
+
+    // 1. Initial seeds from the update record itself
+    attachments = extractFromObj(update, `update-${update.id}`);
+
+    // 2. Scan project_documents for matches
+    projDocs.forEach(d => {
+      // Must match PROJECT ID to prevent cross-project leaks
+      if (d.project_id !== update.project_id) return;
+
+      const docsFromRecord = extractFromObj(d, `doc-${d.id}`);
+      
+      // A: Explicit update_id match (Highest priority)
+      const isExplicitMatch = d.update_id === update.id;
+
+      // B: Temporal + Path Match (Secondary priority)
+      // Only link if they were created within a 60-second window
+      const updateTime = new Date(update.created_at).getTime();
+      const docTime = new Date(d.created_at).getTime();
+      const isTimeClose = Math.abs(updateTime - docTime) < 60000;
+
+      const hasPathMatch = docsFromRecord.some(newDoc => attachments.some(a => a.path === newDoc.path));
+      
+      const isLinked = isExplicitMatch || (isTimeClose && hasPathMatch);
+
+      if (isLinked) {
+        docsFromRecord.forEach(newDoc => {
+          if (!attachments.some(a => a.path === newDoc.path)) {
+            attachments.push(newDoc);
+          }
+        });
+      }
+    });
+    
+    return attachments;
+  };
   const [projectStatusFilter, setProjectStatusFilter] = useState("all");
   const [projectSearch, setProjectSearch] = useState("");
   const [milestoneStatusFilter, setMilestoneStatusFilter] = useState("all");
@@ -1270,7 +1350,7 @@ const Projects = () => {
                           .slice().reverse().map((u, idx) => (
                             <div
                               key={u.id}
-                              onClick={() => setEditingUpdateRecord(u)}
+                              onClick={() => setViewingUpdateRecord(u)}
                               className={`group relative flex min-w-[220px] max-w-[260px] flex-col rounded-xl border bg-card p-3 shadow-sm cursor-pointer hover:shadow-md hover:ring-1 hover:ring-primary/20 transition-all animate-in fade-in slide-in-from-left-2 duration-300 ${u.category === "Sales" ? "border-emerald-200/60 hover:border-emerald-400 hover:shadow-emerald-500/5 translate-y-0" :
                                 u.category === "Cadence" ? "border-orange-200/60 hover:border-orange-400 hover:shadow-orange-500/5 translate-y-0" :
                                   "border-blue-200/60 hover:border-blue-400 hover:shadow-blue-500/5 translate-y-0"
@@ -1332,28 +1412,37 @@ const Projects = () => {
                                 {u.content}
                               </div>
 
-                              {u.file_path && (
-                                <div className="mt-auto flex items-center gap-1.5">
-                                  <a
-                                    href={u.file_path.startsWith('http') ? u.file_path : apiUrl(`/api/files/${u.file_path}`)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex flex-1 items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10 transition-colors"
-                                    title={`View ${u.file_name}`}
-                                  >
-                                    <Eye size={10} />
-                                    <span className="truncate max-w-[100px]">{u.file_name}</span>
-                                  </a>
-                                  <a
-                                    href={u.file_path.startsWith('http') ? u.file_path : apiUrl(`/api/files/${u.file_path}?download=true`)}
-                                    download={u.file_name}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex h-6 w-6 items-center justify-center rounded border border-primary/10 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
-                                    title={`Download ${u.file_name}`}
-                                  >
-                                    <Download size={10} />
-                                  </a>
+                              {getUpdateAttachments(u).length > 0 && (
+                                <div className="mt-auto flex flex-col gap-1.5 pt-2 border-t border-primary/5">
+                                  {getUpdateAttachments(u).slice(0, 2).map((file) => (
+                                    <div key={file.id} className="flex items-center gap-1.5">
+                                      <a
+                                        href={file.path.startsWith('http') ? file.path : apiUrl(`/api/files/${file.path}`)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="flex flex-1 items-center gap-1.5 text-[9px] text-primary hover:underline font-bold bg-primary/5 p-1 rounded border border-primary/10 transition-colors"
+                                        title={`View ${file.name}`}
+                                      >
+                                        <Eye size={10} />
+                                        <span className="truncate max-w-[100px]">{file.name}</span>
+                                      </a>
+                                      <a
+                                        href={file.path.startsWith('http') ? file.path : apiUrl(`/api/files/${file.path}?download=true`)}
+                                        download={file.name}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="flex h-6 w-6 items-center justify-center rounded border border-primary/10 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                                        title={`Download ${file.name}`}
+                                      >
+                                        <Download size={10} />
+                                      </a>
+                                    </div>
+                                  ))}
+                                  {getUpdateAttachments(u).length > 2 && (
+                                    <div className="text-[9px] text-muted-foreground font-bold px-1 italic">
+                                      + {getUpdateAttachments(u).length - 2} more files
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
@@ -2084,6 +2173,91 @@ const Projects = () => {
             isLoading={isAddingHierarchyMember}
           />
         </FormModal>
+
+        {/* Timeline Quick View Modal */}
+        {viewingUpdateRecord && (
+          <FormModal
+            title="Timeline Activity"
+            isOpen={!!viewingUpdateRecord}
+            onClose={() => setViewingUpdateRecord(null)}
+            maxWidth="max-w-xl"
+          >
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${viewingUpdateRecord.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
+                    viewingUpdateRecord.category === "Cadence" ? "bg-orange-100 text-orange-700" :
+                    "bg-blue-100 text-blue-700"
+                    }`}>
+                    {viewingUpdateRecord.category || "Internal"}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                    <Calendar size={14} className="text-gray-400" />
+                    {formatDateReadable(viewingUpdateRecord.activity_date)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    const record = viewingUpdateRecord;
+                    setViewingUpdateRecord(null);
+                    setEditingUpdateRecord(record);
+                  }}
+                  className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-100 transition-all border border-blue-100 shadow-sm"
+                >
+                  <Pencil size={12} /> Edit Details
+                </button>
+              </div>
+
+              <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-5">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Content</p>
+                <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto pr-2 custom-scrollbar font-medium">
+                  {viewingUpdateRecord.content}
+                </div>
+              </div>
+
+              {getUpdateAttachments(viewingUpdateRecord).length > 0 && (
+                <div className="pt-2">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
+                    Attachments ({getUpdateAttachments(viewingUpdateRecord).length})
+                  </p>
+                  <div className="space-y-3">
+                    {getUpdateAttachments(viewingUpdateRecord).map((file) => (
+                      <a
+                        key={file.id}
+                        href={file.path.startsWith('http') ? file.path : apiUrl(`/api/files/${file.path}`)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex items-center gap-4 rounded-xl border border-blue-100 bg-blue-50/30 p-3 transition-all hover:bg-blue-50 hover:shadow-md"
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600 transition-transform group-hover:scale-110">
+                          <FileText size={20} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-gray-900 truncate">{file.name}</p>
+                          <p className="text-[10px] text-blue-600 font-semibold flex items-center gap-1 mt-0.5 uppercase tracking-wider">
+                            View Document <ChevronRight size={10} />
+                          </p>
+                        </div>
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm transition-opacity opacity-0 group-hover:opacity-100">
+                          <Eye size={16} />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-6 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => setViewingUpdateRecord(null)}
+                  className="rounded-lg border border-gray-200 bg-white px-6 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50 transition-all shadow-sm"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </FormModal>
+        )}
 
         {/* Timeline Update Modal */}
         {editingUpdateRecord && (
