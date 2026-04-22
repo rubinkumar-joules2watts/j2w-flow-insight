@@ -95,7 +95,7 @@ const Resources = () => {
     setLoadingSuggestions(true);
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}/api/designations/skills`, {
+      const res = await fetch(`${baseUrl}api/designations/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ designation: title })
@@ -576,14 +576,14 @@ const Resources = () => {
   );
 };
 
-const SkillsSelector = ({ selectedSkills, suggestedSkills, isLoading, currentRole, onGenerate, onAddSkill, onRemoveSkill }: { 
-  selectedSkills: string[]; 
-  suggestedSkills: any; 
+const SkillsSelector = ({ selectedSkills, suggestedSkills, isLoading, currentRole, onGenerate, onAddSkill, onRemoveSkill }: {
+  selectedSkills: string[];
+  suggestedSkills: any;
   isLoading: boolean;
   currentRole?: string;
   onGenerate?: () => void;
-  onAddSkill: (s: string) => void; 
-  onRemoveSkill: (s: string) => void 
+  onAddSkill: (s: string) => void;
+  onRemoveSkill: (s: string) => void
 }) => {
   const [customSkill, setCustomSkill] = useState("");
 
@@ -630,7 +630,7 @@ const SkillsSelector = ({ selectedSkills, suggestedSkills, isLoading, currentRol
       )}
 
       {!isLoading && !suggestedSkills && currentRole && currentRole.length > 3 && onGenerate && (
-        <button 
+        <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onGenerate(); }}
           className="group w-full flex items-center justify-between gap-2 p-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300 shadow-sm"
         >
@@ -660,15 +660,15 @@ const SkillsSelector = ({ selectedSkills, suggestedSkills, isLoading, currentRol
               </div>
             </div>
             {onGenerate && (
-              <button 
-                onClick={(e) => { e.preventDefault(); onGenerate(); }} 
+              <button
+                onClick={(e) => { e.preventDefault(); onGenerate(); }}
                 className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-blue-50 text-[10px] font-bold text-blue-500 transition-colors"
               >
                 <Wand2 size={10} /> Refresh
               </button>
             )}
           </div>
-          
+
           <div className="grid grid-cols-1 gap-5 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
             {[
               { key: "technical_skills", label: "Technical Mastery", color: "text-blue-600", bg: "bg-blue-500/10", icon: "T" },
@@ -733,7 +733,7 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
     setLoadingSuggestions(true);
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}/api/designations/skills`, {
+      const res = await fetch(`${baseUrl}api/designations/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ designation: title })
@@ -889,15 +889,15 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
               onRemoveSkill={(s) => setForm(prev => ({ ...prev, skills: prev.skills.filter(sk => sk !== s) }))}
             />
           </FormSection>
-          
+
           {localAssignments.length > 0 && (
             <FormSection title="Active Project Assignments">
               <div className="space-y-3 pt-1">
                 {localAssignments.map((la, idx) => (
                   <div key={la.id} className="p-4 rounded-xl border border-gray-100 bg-gray-50/80 shadow-sm">
                     <div className="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
-                       <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Designation on Project</p>
-                       <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">{la.projectName}</span>
+                      <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Designation on Project</p>
+                      <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">{la.projectName}</span>
                     </div>
                     <FormInput
                       label=""
