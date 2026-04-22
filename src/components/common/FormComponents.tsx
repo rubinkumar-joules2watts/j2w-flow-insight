@@ -210,23 +210,25 @@ export const FormModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
       onClick={onClose}
     >
       <div
-        className={`${maxWidth} w-full rounded-lg border border-gray-200 bg-gradient-to-b from-white to-gray-50 p-6 shadow-2xl`}
+        className={`${maxWidth} w-full max-h-[90vh] flex flex-col rounded-2xl border border-white/20 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-white sticky top-0 z-10">
+          <h3 className="text-xl font-bold text-gray-900 tracking-tight">{title}</h3>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all"
           >
-            <X size={18} />
+            <X size={20} />
           </button>
         </div>
-        <div className="space-y-4">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+          {children}
+        </div>
       </div>
     </div>
   );

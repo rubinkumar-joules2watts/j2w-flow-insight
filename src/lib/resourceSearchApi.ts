@@ -12,6 +12,7 @@ export interface ResourceSearchMember {
   id: string
   name: string
   role: string
+  resource_type?: string
   initials: string
   color_hex: string
   skills: string[]

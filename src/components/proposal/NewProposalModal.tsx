@@ -4,6 +4,7 @@ import {
   Check, AlertTriangle, Building2, Zap, Calendar, Users, CheckCircle2,
   HelpCircle, ChevronDown, ExternalLink, Edit2, Pencil
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { extractProposalDocument, type ExtractedProposalResponse } from '@/lib/proposalExtractionApi'
 import { searchResources, autoAllocateResources, type ResourceSearchMember, type ActiveProject } from '@/lib/resourceSearchApi'
 import internalData from '../../data/internal_data.js'
@@ -270,6 +271,14 @@ function EmpCard({ member, assignAction }: {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold text-gray-900 truncate">{member.name}</p>
+            {member.resource_type && (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider border ${member.resource_type === 'External' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' :
+                member.resource_type === 'Consultant' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                  'bg-emerald-50 text-emerald-600 border-emerald-100'
+                }`}>
+                {member.resource_type}
+              </span>
+            )}
             <span className={`text-sm font-bold rounded-full border px-2.5 py-0.5 flex-shrink-0 ${scoreCls}`}>{score}% match</span>
             {member.skill_score > 0 && (
               <span className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-full px-2 py-0.5">
@@ -298,43 +307,6 @@ function EmpCard({ member, assignAction }: {
 
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
-          {/* Active project allocations */}
-          <div>
-            <p className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-              Active Project Allocations
-              {member.active_projects.length > 0 && (
-                <span className="ml-1.5 text-xs font-semibold text-gray-400 normal-case">({member.committed_bandwidth}% total committed)</span>
-              )}
-            </p>
-            {member.active_projects.length === 0 ? (
-              <p className="text-sm text-emerald-600 font-semibold">✅ No active commitments — fully available</p>
-            ) : (
-              <div className="space-y-1.5">
-                {member.active_projects.map((proj: ActiveProject) => (
-                  <div key={proj.project_id} className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{proj.project_name || proj.project_id}</p>
-                      {(proj.start_date || proj.end_date) && (
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {proj.start_date ? fmtDate(proj.start_date) : '?'} → {proj.end_date ? fmtDate(proj.end_date) : 'Ongoing'}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0 ml-3 text-right">
-                      <span className="text-sm font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2.5 py-0.5">
-                        {proj.engagement_level}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-                <div className="flex items-center gap-2 pt-0.5">
-                  <div className={`text-xs font-semibold ${avail > 50 ? 'text-emerald-600' : avail > 20 ? 'text-amber-600' : 'text-red-500'}`}>
-                    {avail > 50 ? '✅ Fully available' : avail > 20 ? '⚠️ Limited capacity' : '❌ Near full capacity'} · {avail}% free
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
 
           {/* Skills */}
           {allSkills.length > 0 && (
@@ -529,7 +501,7 @@ function ExternalCard({ company, score, matched, partial, assigned, onAssign }: 
 interface NewProposalModalProps {
   open: boolean
   onClose: () => void
-  onSave: (project: any) => void
+  onSave: (project: any) => Promise<void> | void
 }
 
 const STEP_LABELS = [
@@ -542,6 +514,7 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState<WizardStep>('choose')
+  const [isSaving, setIsSaving] = useState(false)
   const [fileName, setFileName] = useState('')
   const [projectName, setProjectName] = useState('')
   const [client, setClient] = useState('')
@@ -781,6 +754,9 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       }
       const updated = [...a.assignments, newAssign].sort((x, y) => y.bw - x.bw)
       const newTbd = Math.max(0, a.tbdBW - allocBW)
+      
+      toast.success(`✓ ${member.name} assigned to ${a.role || 'Role'}`)
+      
       return { ...a, assignments: updated, tbdBW: newTbd, status: newTbd <= 0 ? 'matched' : 'partial' }
     }))
   }
@@ -804,6 +780,10 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
       }
 
       const updated = [...a.assignments, newAssign]
+      
+      const displayName = company['Contact Person'] || company['Company Name']
+      toast.success(`✓ ${displayName} assigned to ${a.role || 'Role'}`)
+
       return {
         ...a,
         assignments: updated,
@@ -833,37 +813,44 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  const handleSave = () => {
-    onSave({
-      'Project ID': Date.now(),
-      'Project Name': projectName || 'New Project',
-      'Client': client || null,
-      'Project Type': 'New Proposal',
-      'Delivery Manager': 'Unassigned',
-      'Revenue Model': 'Milestone',
-      'Resource Aligned': allocations.map(a => a.assignments.map(as => as.name).join(', ')).filter(Boolean).join(', ') || 'TBD',
-      'Handled By': 'Hybrid Team',
-      'Add Info': '',
-      // Formatted milestones (for display on Proposal page)
-      'Milestones': milestones.map((m, i) => ({
-        'Milestone': `M${i + 1}`,
-        'Milestone Description': m.name,
-        'Planned Start': fmtDate(m.startDate),
-        'Planned End': fmtDate(m.endDate),
-        '% Complete': 0,
-        'Current Status': 'Not Started',
-        'Invoice Status': 'Pending',
-      })),
-      // Raw ISO milestones for DB insertion (used by Projects page)
-      '_rawMilestones': milestones.map((m, i) => ({
-        code: `M${i + 1}`,
-        description: m.name,
-        plannedStart: m.startDate,  // YYYY-MM-DD
-        plannedEnd: m.endDate,      // YYYY-MM-DD
-      })),
-      '_allocations': allocations,
-    })
-    handleClose()
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await onSave({
+        'Project ID': Date.now(),
+        'Project Name': projectName || 'New Project',
+        'Client': client || null,
+        'Project Type': 'New Proposal',
+        'Delivery Manager': 'Unassigned',
+        'Revenue Model': 'Milestone',
+        'Resource Aligned': allocations.map(a => a.assignments.map(as => as.name).join(', ')).filter(Boolean).join(', ') || 'TBD',
+        'Handled By': 'Hybrid Team',
+        'Add Info': '',
+        // Formatted milestones (for display on Proposal page)
+        'Milestones': milestones.map((m, i) => ({
+          'Milestone': `M${i + 1}`,
+          'Milestone Description': m.name,
+          'Planned Start': fmtDate(m.startDate),
+          'Planned End': fmtDate(m.endDate),
+          '% Complete': 0,
+          'Current Status': 'Not Started',
+          'Invoice Status': 'Pending',
+        })),
+        // Raw ISO milestones for DB insertion (used by Projects page)
+        '_rawMilestones': milestones.map((m, i) => ({
+          code: `M${i + 1}`,
+          description: m.name,
+          plannedStart: m.startDate,  // YYYY-MM-DD
+          plannedEnd: m.endDate,      // YYYY-MM-DD
+        })),
+        '_allocations': allocations,
+      })
+      handleClose()
+    } catch (error) {
+      console.error("Failed to finalize proposal:", error)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   if (!open) return null
@@ -905,7 +892,24 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
         </div>
 
         {/* ── Body ── */}
-        <div className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex-1 overflow-y-auto min-h-0 relative">
+          {/* Working Loader Overlay */}
+          {isSaving && (
+            <div className="absolute inset-0 z-[60] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md animate-in fade-in duration-300">
+              <div className="bg-white p-10 rounded-2xl shadow-xl flex flex-col items-center border border-blue-50 max-w-md text-center">
+                <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-6" />
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Finalizing Proposal</h3>
+                <p className="text-gray-500 leading-relaxed">
+                  We are working on creating the projects and assigning the selected resources, wait for sometime.
+                </p>
+                <div className="mt-8 flex gap-1 items-center">
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <div className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ══ CHOOSE ══════════════════════════════════════════════════════════ */}
           {step === 'choose' && (
@@ -1015,14 +1019,14 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
                 <Zap size={15} className="text-blue-500 flex-shrink-0" />
                 <div className="flex-1 grid grid-cols-2 gap-4 min-w-0">
                   <div>
-                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Project Name</p>
-                    <input className="text-sm font-bold text-gray-900 bg-transparent outline-none w-full placeholder:text-gray-400"
-                      value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Enter project name…" />
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Project Name <span className="text-red-500 font-black">*</span></p>
+                    <input className={`text-sm font-bold text-gray-900 bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5 border transition-all outline-none w-full placeholder:text-gray-400 ${!projectName ? 'border-amber-200 bg-amber-50/30' : 'border-transparent focus:border-blue-300'}`}
+                      value={projectName} onChange={e => setProjectName(e.target.value)} placeholder="Enter project name…" required />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Client</p>
-                    <input className="text-sm font-bold text-gray-900 bg-transparent outline-none w-full placeholder:text-gray-400"
-                      value={client} onChange={e => setClient(e.target.value)} placeholder="Client name…" />
+                    <p className="text-xs font-bold text-blue-400 uppercase tracking-widest mb-0.5">Client <span className="text-red-500 font-black">*</span></p>
+                    <input className={`text-sm font-bold text-gray-900 bg-white/50 backdrop-blur-sm rounded-lg px-2 py-1.5 border transition-all outline-none w-full placeholder:text-gray-400 ${!client ? 'border-amber-200 bg-amber-50/30' : 'border-transparent focus:border-blue-300'}`}
+                      value={client} onChange={e => setClient(e.target.value)} placeholder="Client name…" required />
                   </div>
                 </div>
               </div>
@@ -1760,8 +1764,16 @@ export default function NewProposalModal({ open, onClose, onSave }: NewProposalM
 
             <div className="flex items-center gap-3">
               {step === 's1' && (
-                <button onClick={() => setStep('s2')}
-                  className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 text-sm font-bold transition-colors shadow-sm">
+                <button 
+                  onClick={() => {
+                    if (!projectName || !client) {
+                      toast.error("Please provide both Project Name and Client Name to proceed.");
+                      return;
+                    }
+                    setStep('s2');
+                  }}
+                  className={`flex items-center gap-2 rounded-lg text-white px-5 py-2.5 text-sm font-bold transition-all shadow-sm ${(!projectName || !client) ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 active:scale-[0.98]'}`}
+                >
                   Next: Resource Search <ChevronRight size={15} />
                 </button>
               )}

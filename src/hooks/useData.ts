@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { api, apiUrl } from "@/lib/api";
 
 export type Client = { id: string; name: string };
 export type Project = {
@@ -25,6 +25,7 @@ export type TeamMember = {
   resource_type: string | null;
   engagement_pct: number | null; color_hex: string | null;
   is_active: boolean | null;
+  skills: string[] | null;
 };
 export type ProjectAssignment = {
   id: string; project_id: string | null; team_member_id: string | null;
@@ -62,12 +63,21 @@ export type MilestoneHealthPhase = {
   start_date?: string | null;
   end_date?: string | null;
   date?: string;
-  weeks: WeekData[];
+  weeks?: WeekData[];
   completion_pct?: number;
   status: string;
+  color?: string;
   days_variance?: number;
   signoff_status?: string;
   invoice_status?: string;
+};
+
+export type CalendarMonth = {
+  month: number;
+  year: number;
+  month_name: string;
+  month_year: string;
+  weeks_count: number;
 };
 
 export type MilestoneHealthData = {
@@ -82,6 +92,8 @@ export type MilestoneHealthData = {
     total_weeks: number;
   };
   all_weeks: Record<string, { label: string; start: string }>;
+  calendar_start: string;
+  calendar_months: CalendarMonth[];
 };
 
 export type TeamMemberEngagement = {
@@ -173,8 +185,7 @@ export const useMilestoneHealth = (projectId: string) =>
   useQuery({
     queryKey: ["milestone_health", projectId],
     queryFn: async () => {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}api/projects/${projectId}/milestone-health`);
+      const res = await fetch(apiUrl(`api/projects/${projectId}/milestone-health`));
       if (!res.ok) throw new Error("Failed to fetch milestone health");
       return (await res.json()) as MilestoneHealthData;
     },
@@ -193,8 +204,7 @@ export const useEngagement = (memberId: string, projectId: string) =>
   useQuery({
     queryKey: ["engagement", memberId, projectId],
     queryFn: async () => {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}api/team_members_engagement/member/${memberId}/project/${projectId}`);
+      const res = await fetch(apiUrl(`/api/team_members_engagement/member/${memberId}/project/${projectId}`));
       if (!res.ok) throw new Error("Failed to fetch engagement");
       const data = await res.json();
       return (data[0] || { engagement_level: "0" }) as Engagement;
@@ -206,8 +216,7 @@ export const useUpdateEngagement = () => {
   const qc = useQueryClient();
   return {
     mutateAsync: async (payload: { team_member_id: string; project_id: string; engagement_level: string }) => {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}api/team_members_engagement`, {
+      const res = await fetch(apiUrl(`/api/team_members_engagement`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -223,8 +232,7 @@ export const useDeleteMilestonePracticeStatus = () => {
   const qc = useQueryClient();
   return {
     mutateAsync: async (payload: { milestoneId: string; weekNumber: number; projectId: string }) => {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "https://j2w-tracker-backend.onrender.com";
-      const res = await fetch(`${baseUrl}api/milestones/${payload.milestoneId}/health/practice/week/${payload.weekNumber}`, {
+      const res = await fetch(apiUrl(`api/milestones/${payload.milestoneId}/health/practice/week/${payload.weekNumber}`), {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to delete milestone practice status");
