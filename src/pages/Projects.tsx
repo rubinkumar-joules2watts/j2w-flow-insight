@@ -192,6 +192,7 @@ const Projects = () => {
   const [isAddingHierarchyMember, setIsAddingHierarchyMember] = useState(false);
   const [isTimelineCollapsed, setIsTimelineCollapsed] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [uploadingUpdateId, setUploadingUpdateId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tileFileInputRef = useRef<HTMLInputElement>(null);
@@ -866,48 +867,56 @@ const Projects = () => {
     const proj = projects?.find((p) => p.id === projectId);
     if (!proj) return;
 
-    const relatedMilestones = milestones?.filter((m) => m.project_id === projectId) || [];
-    const relatedAssignments = assignments?.filter((a) => a.project_id === projectId) || [];
+    setIsDeletingProject(true);
+    try {
+      const relatedMilestones = milestones?.filter((m) => m.project_id === projectId) || [];
+      const relatedAssignments = assignments?.filter((a) => a.project_id === projectId) || [];
 
-    for (const ms of relatedMilestones) {
-      const { error } = await api.from("milestones").delete().eq("id", ms.id);
+      for (const ms of relatedMilestones) {
+        const { error } = await api.from("milestones").delete().eq("id", ms.id);
+        if (error) {
+          toast.error("Failed to delete related milestones");
+          return;
+        }
+        await writeAuditLog("milestones", ms.id, "DELETE", ms, null);
+      }
+
+      for (const a of relatedAssignments) {
+        const { error } = await api.from("project_assignments").delete().eq("id", a.id);
+        if (error) {
+          toast.error("Failed to delete related assignments");
+          return;
+        }
+        await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+      }
+
+      const { error } = await api.from("projects").delete().eq("id", projectId);
       if (error) {
-        toast.error("Failed to delete related milestones");
+        toast.error("Failed to delete project");
         return;
       }
-      await writeAuditLog("milestones", ms.id, "DELETE", ms, null);
-    }
+      await writeAuditLog("projects", projectId, "DELETE", proj, null);
 
-    for (const a of relatedAssignments) {
-      const { error } = await api.from("project_assignments").delete().eq("id", a.id);
-      if (error) {
-        toast.error("Failed to delete related assignments");
-        return;
+      const remaining = (projects || []).filter((p) => p.id !== projectId);
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["milestones"] });
+      qc.invalidateQueries({ queryKey: ["project_assignments"] });
+      qc.invalidateQueries({ queryKey: ["audit_log"] });
+
+      if (remaining[0]?.id) {
+        navigate(`/projects?id=${remaining[0].id}`);
+      } else {
+        navigate(`/projects`);
       }
-      await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
+
+      toast.success(`✓ Project deleted · ${new Date().toLocaleTimeString()}`);
+    } catch (err) {
+      console.error("Delete failure:", err);
+      toast.error("An error occurred while deleting the project");
+    } finally {
+      setIsDeletingProject(false);
+      setConfirmDeleteProject(null);
     }
-
-    const { error } = await api.from("projects").delete().eq("id", projectId);
-    if (error) {
-      toast.error("Failed to delete project");
-      return;
-    }
-    await writeAuditLog("projects", projectId, "DELETE", proj, null);
-
-    const remaining = (projects || []).filter((p) => p.id !== projectId);
-    qc.invalidateQueries({ queryKey: ["projects"] });
-    qc.invalidateQueries({ queryKey: ["milestones"] });
-    qc.invalidateQueries({ queryKey: ["project_assignments"] });
-    qc.invalidateQueries({ queryKey: ["audit_log"] });
-
-    if (remaining[0]?.id) {
-      navigate(`/projects?id=${remaining[0].id}`);
-    } else {
-      navigate(`/projects`);
-    }
-
-    toast.success(`✓ Project deleted · ${new Date().toLocaleTimeString()}`);
-    setConfirmDeleteProject(null);
   };
 
   const doneMilestones = projMilestones.filter((m) => m.completion_pct === 100).length;
@@ -2144,13 +2153,33 @@ const Projects = () => {
                   <p className="mt-2 text-xs text-gray-500">This action will delete all associated milestones, assignments, and documents. This cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => setConfirmDeleteProject(null)} className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors">
+                  <button 
+                    onClick={() => setConfirmDeleteProject(null)} 
+                    disabled={isDeletingProject}
+                    className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  >
                     Cancel
                   </button>
-                  <button onClick={() => handleDeleteProject(confirmDeleteProject)} className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors">
-                    Delete Project
+                  <button 
+                    onClick={() => handleDeleteProject(confirmDeleteProject)} 
+                    disabled={isDeletingProject}
+                    className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
+                  >
+                    {isDeletingProject ? (
+                      <>
+                        <Loader2 size={16} className="animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      "Delete Project"
+                    )}
                   </button>
                 </div>
+                {isDeletingProject && (
+                  <p className="mt-4 text-center text-[10px] font-bold text-amber-500 uppercase tracking-widest animate-pulse">
+                    Cleaning up related milestones and assignments...
+                  </p>
+                )}
               </div>
             </div>
           );

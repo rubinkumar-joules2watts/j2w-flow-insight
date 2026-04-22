@@ -556,141 +556,83 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       console.error("Delete failed:", err);
       alert(`Error deleting: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-  };
+  };  // --- BACKEND-DRIVEN TIMELINE LOGIC ---
+  const calendarMonths = data.calendar_months || [];
+  const backendAllWeeks = data.all_weeks || {};
+  const allMilestones = projectMilestones || [];
 
-  // --- NEW TIMELINE LOGIC (Refined) ---
-
-  // 1. Determine Absolute Start/End
-  let timelineStart = new Date();
-
-  // Start logic: prioritize actual health activity week dates
-  const practicePhases = data.practice || [];
-  const signoffPhases = data.signoff || [];
-  const invoicePhases = data.invoice || [];
-  const allTargetMilestones = projectMilestones || [];
-
-  let anchorDate: Date | null = null;
-
-  // 1. Gather all week dates from all phases
-  const healthWeekDates = [
-    ...practicePhases.flatMap(p => p.weeks?.map(w => w.date) || []),
-    ...signoffPhases.flatMap(s => s.weeks?.map(w => w.date) || []),
-    ...invoicePhases.flatMap(i => i.weeks?.map(w => w.date) || [])
-  ].filter((d): d is string => !!d).map(d => new Date(d));
-
-  if (healthWeekDates.length > 0) {
-    anchorDate = new Date(Math.min(...healthWeekDates.map(d => d.getTime())));
-  }
-
-  // 2. Fallback to M1 if no health data yet
-  if (!anchorDate) {
-    const m1 = allTargetMilestones.find(m => m.milestone_code?.toUpperCase() === "M1");
-    if (m1 && (m1.planned_start || m1.actual_start)) {
-      anchorDate = new Date(m1.planned_start || m1.actual_start || "");
-    }
-  }
-
-  // 3. Absolute fallback: earliest date in project list
-  if (!anchorDate && allTargetMilestones.length > 0) {
-    const milestoneDates = allTargetMilestones.flatMap(m => [
-      m.planned_start ? new Date(m.planned_start) : null,
-      m.actual_start ? new Date(m.actual_start) : null,
-    ]).filter((d): d is Date => d !== null);
-    if (milestoneDates.length > 0) {
-      anchorDate = new Date(Math.min(...milestoneDates.map(d => d.getTime())));
-    }
-  }
-
-  if (anchorDate) {
-    timelineStart = new Date(anchorDate);
-  }
-
-  // Align to Monday of that week for consistent alignment with backend (Feb 2-08, 2026)
-  const day = timelineStart.getDay();
-  const diff = timelineStart.getDate() - day + (day === 0 ? -6 : 1);
-  timelineStart.setDate(diff);
-
-  // End logic: Max of (Project End, CURRENT_DATE + 4 months) Capped at Dec 2026 for now
-  let maxProjectDate = new Date();
-  if (allTargetMilestones.length > 0) {
-    const endDates = allTargetMilestones.flatMap(m => [
-      m.planned_end ? new Date(m.planned_end) : null,
-      m.actual_end_eta ? new Date(m.actual_end_eta) : null,
-    ]).filter((d): d is Date => d !== null);
-    if (endDates.length > 0) {
-      maxProjectDate = new Date(Math.max(...endDates.map(d => d.getTime())));
-    }
-  }
-
-  const fourMonthsFromNow = new Date();
-  fourMonthsFromNow.setMonth(fourMonthsFromNow.getMonth() + 4);
-
-  let timelineEnd = new Date(Math.max(maxProjectDate.getTime(), fourMonthsFromNow.getTime()));
-
-  // Still cap at Dec 2026 if it's too far
-  const dec2026 = new Date(2026, 11, 31);
-  if (timelineEnd > dec2026) {
-    timelineEnd = new Date(dec2026.getTime());
-  }
-
-  // 2. Generate Contiguous Weeks
+  // 1. Generate Global Grid from calendar_months
+  const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string; weeks_count: number }> = {};
+  const monthOrder: string[] = [];
   const processedAllWeeks: Record<string, { start: string; label: string }> = {};
-  const dateToWeekIdxMap: Record<string, number> = {};
+  
+  const firstWeekData = backendAllWeeks["0"];
+  let leadingPaddingWeeks = 0;
 
-  let current = new Date(timelineStart);
-  let wIdx = 0;
-  while (current <= timelineEnd) {
-    const startStr = current.toISOString().split("T")[0];
-    const nextWeek = new Date(current);
-    nextWeek.setDate(nextWeek.getDate() + 6);
-
-    processedAllWeeks[String(wIdx)] = {
-      start: startStr,
-      label: `${current.toLocaleString('default', { month: 'short' })} ${current.getDate()}-${nextWeek.getDate()}, ${current.getFullYear()}`
-    };
-
-    // Fill every day in the week into the dateToWeekIdxMap for easier lookup
-    const walker = new Date(current);
-    for (let d = 0; d < 7; d++) {
-      dateToWeekIdxMap[walker.toISOString().split("T")[0]] = wIdx;
-      walker.setDate(walker.getDate() + 1);
+  // Detect if the first month needs leading padding (e.g. project starts Apr 13, we want to show Apr 1-12)
+  if (firstWeekData && calendarMonths.length > 0) {
+    const dayMatch = firstWeekData.label.match(/\s(\d+)-/);
+    if (dayMatch) {
+      const startDay = parseInt(dayMatch[1]);
+      if (startDay > 7) {
+        leadingPaddingWeeks = Math.ceil((startDay - 1) / 7);
+      }
     }
-
-    current.setDate(current.getDate() + 7);
-    wIdx++;
   }
 
-  // 3. Group by Month (Chronological)
-  const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string }> = {};
-  const monthOrder: string[] = []; // To keep month keys in order
+  let gridWeekCounter = 0;
+  calendarMonths.forEach((m, mIdx) => {
+    const monthKey = m.month_year;
+    const isFirstMonth = mIdx === 0;
+    const additionalWeeks = isFirstMonth ? leadingPaddingWeeks : 0;
+    
+    const startIdx = gridWeekCounter;
+    const endIdx = gridWeekCounter + (m.weeks_count + additionalWeeks) - 1;
+    
+    monthGroups[monthKey] = {
+      startIdx,
+      endIdx,
+      label: m.month_year,
+      weeks_count: m.weeks_count + additionalWeeks
+    };
+    monthOrder.push(monthKey);
+    
+    // Create placeholders
+    for (let i = 0; i < (m.weeks_count + additionalWeeks); i++) {
+      const idx = gridWeekCounter + i;
+      processedAllWeeks[String(idx)] = {
+        start: "", 
+        label: `Week ${i + 1}`
+      };
+    }
+    gridWeekCounter += (m.weeks_count + additionalWeeks);
+  });
 
-  // Iterate in numerical order of weeks
-  const sortedWeekIndices = Object.keys(processedAllWeeks).map(Number).sort((a, b) => a - b);
-  sortedWeekIndices.forEach((weekIdx) => {
-    const week = processedAllWeeks[String(weekIdx)];
-    const startDate = new Date(week.start);
-    // Use the midpoint of the week (3 days after start) to determine the "majority" month
-    const majorityDate = new Date(startDate);
-    majorityDate.setDate(majorityDate.getDate() + 3);
-    const year = majorityDate.getFullYear();
-    const month = String(majorityDate.getMonth() + 1).padStart(2, "0");
-    const monthKey = `${year}-${month}`;
-    const monthLabel = `${majorityDate.toLocaleString("en-US", { month: "short" })} ${year}`;
+  // 2. Align Backend Week Data (all_weeks) to the Global Grid
+  let dataWeekOffset = leadingPaddingWeeks; // Start with leading padding
+  if (firstWeekData && monthOrder.length > 0) {
+    const firstWeekMonthYear = firstWeekData.label.split(",")[1]?.trim() || "";
+    const firstWeekMonthName = firstWeekData.label.split(" ")[0];
+    const targetMonthYear = `${firstWeekMonthName} ${firstWeekMonthYear}`;
+    
+    // If the data doesn't start in the very first month of the grid, find its month's start index
+    if (targetMonthYear !== monthOrder[0] && monthGroups[targetMonthYear]) {
+        dataWeekOffset = monthGroups[targetMonthYear].startIdx;
+    }
+  }
 
-    if (!monthGroups[monthKey]) {
-      monthGroups[monthKey] = { startIdx: weekIdx, endIdx: weekIdx, label: monthLabel };
-      monthOrder.push(monthKey);
-    } else {
-      monthGroups[monthKey].endIdx = weekIdx;
+  // Enrich processedAllWeeks with labels from backend if available
+  Object.entries(backendAllWeeks).forEach(([bIdx, wData]) => {
+    const gridIdx = dataWeekOffset + parseInt(bIdx);
+    if (processedAllWeeks[String(gridIdx)]) {
+      processedAllWeeks[String(gridIdx)].label = wData.label;
+      processedAllWeeks[String(gridIdx)].start = wData.start;
     }
   });
 
-  // Helper to find the week index for a backend WeekData item using its date
-  const getMappedWeekIdx = (dateStr: string | undefined): number | undefined => {
-    if (!dateStr) return undefined;
-    const cleanDate = dateStr.split("T")[0];
-    return dateToWeekIdxMap[cleanDate];
-  };
+  // 3. Helper to map backend week number to grid index
+  const getGridIdxFromBackendWeek = (backendWeekNum: number) => dataWeekOffset + backendWeekNum;
+;
 
   const phases: Array<{ type: "practice" | "signoff" | "invoice"; label: string }> = [
     { type: "practice", label: "PRACTICE" },
@@ -772,8 +714,8 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                       const weekMeta = processedAllWeeks[String(weekIdx)];
                       const weekLabel = weekMeta?.label || `Week ${weekIdx}`;
 
-                      // USE projectMilestones as the master list for rows
-                      const milestonesToRender = projectMilestones || [];
+                      // USE allMilestones as the master list for rows
+                      const milestonesToRender = allMilestones;
 
                       // Sort all milestones by code for consistent alignment
                       const sortedMilestones = [...milestonesToRender].sort((a, b) => {
@@ -799,23 +741,24 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                               status: "Pending"
                             };
 
-                            // DATE-BASED Mapping for the week bubble
-                            // 1. Check if we have a weeks array (Practice)
-                            let week = healthMilestone?.weeks?.find((w) => {
-                              const mappedIdx = getMappedWeekIdx(w.date);
-                              return mappedIdx === weekIdx;
-                            });
+                            // BACKEND-DRIVEN Mapping
+                            // 1. Check if we have data for this grid week
+                            const targetBackendWeekNum = weekIdx - dataWeekOffset;
+                            
+                            let week = healthMilestone?.weeks?.find((w) => w.week_number === targetBackendWeekNum);
 
-                            // 2. Fallback to single date (Signoff/Invoice)
+                            // 2. Fallback to single date (Signoff/Invoice) - Match by Grid Index if possible
                             if (!week && healthMilestone?.date) {
-                              const mappedIdx = getMappedWeekIdx(healthMilestone.date);
-                              if (mappedIdx === weekIdx) {
-                                // Blue for Done/Completed, Indigo for Partial, Gray for Pending
+                              const milestoneDate = healthMilestone.date.split("T")[0];
+                              const weekData = Object.entries(backendAllWeeks).find(([_, info]) => info.start.startsWith(milestoneDate));
+                              const mappedGridIdx = weekData ? getGridIdxFromBackendWeek(parseInt(weekData[0])) : -1;
+                              
+                              if (mappedGridIdx === weekIdx) {
                                 const isDone = healthMilestone.status === 'Done' || healthMilestone.status === 'Completed';
                                 const isPartial = healthMilestone.status === 'Partial';
                                 const color = isDone ? 'blue' : isPartial ? 'indigo' : 'gray';
                                 week = {
-                                  week_number: weekIdx,
+                                  week_number: targetBackendWeekNum,
                                   status: healthMilestone.status || 'Pending',
                                   color: color,
                                   week_label: weekLabel,
