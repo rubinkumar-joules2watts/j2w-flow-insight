@@ -292,11 +292,13 @@ const Projects = () => {
     return byProject && byStatus && bySearch;
   });
 
-  const filteredProjMilestones = projMilestones.filter((m) => {
-    const byStatus = milestoneStatusFilter === "all" || (m.status || "") === milestoneStatusFilter;
-    const bySearch = !milestoneSearch.trim() || `${m.milestone_code || ""} ${m.description || ""}`.toLowerCase().includes(milestoneSearch.toLowerCase().trim());
-    return byStatus && bySearch;
-  });
+  const filteredProjMilestones = projMilestones
+    .filter((m) => {
+      const byStatus = milestoneStatusFilter === "all" || (m.status || "") === milestoneStatusFilter;
+      const bySearch = !milestoneSearch.trim() || `${m.milestone_code || ""} ${m.description || ""}`.toLowerCase().includes(milestoneSearch.toLowerCase().trim());
+      return byStatus && bySearch;
+    })
+    .sort((a, b) => (a.milestone_code || "").localeCompare(b.milestone_code || "", undefined, { numeric: true, sensitivity: 'base' }));
 
   const filteredProjDocs = projDocs.filter((d) => d.project_id === selectedId)
     .filter((d) => documentFilter === "all" || d.category === documentFilter);
