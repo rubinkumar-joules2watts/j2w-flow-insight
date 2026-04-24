@@ -608,8 +608,9 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       for (const m of calendarMonths) {
           if (m.month === targetMonth && m.year === targetYear) {
               const monthStart = new Date(m.year, m.month - 1, 1);
+              const startDayOfWeek = monthStart.getDay(); // 0 = Sunday
               const diffDays = Math.floor((targetDate.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24));
-              const weekOffsetInMonth = diffDays >= 0 ? Math.floor(diffDays / 7) : 0;
+              const weekOffsetInMonth = diffDays >= 0 ? Math.floor((diffDays + startDayOfWeek) / 7) : 0;
               return gridWeekCounter + Math.min(weekOffsetInMonth, m.weeks_count - 1);
           }
           gridWeekCounter += m.weeks_count;
