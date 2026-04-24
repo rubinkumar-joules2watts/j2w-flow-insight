@@ -156,7 +156,7 @@ const Overview = () => {
         </div>
 
         {/* KPI Row - Dashboard Counters */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           {[
             {
               icon: Zap,
@@ -196,22 +196,24 @@ const Overview = () => {
               statusValue: "Completed",
               value: counters.completed_projects,
               color: "text-white",
-              bgColor: "bg-emerald-600 border-emerald-700"
+              bgColor: "bg-emerald-600 border-emerald-700",
+              isHidden: true
             },
           ].map((kpi) => {
             const isActive = statusFilter === kpi.statusValue;
+            if (kpi.isHidden) return null;
             return (
               <div
                 key={kpi.label}
                 onClick={() => setStatusFilter(isActive ? "all" : kpi.statusValue)}
-                className={`flex flex-col items-center justify-center rounded-2xl border-2 ${kpi.bgColor} p-4 text-center shadow-lg cursor-pointer transition-all hover:shadow-xl h-[160px] relative overflow-hidden group ${isActive ? "ring-4 ring-offset-2 ring-blue-500 scale-[1.02]" : "hover:scale-[1.01]"
+                className={`flex flex-col items-center justify-center rounded-2xl border-2 ${kpi.bgColor} p-4 text-center shadow-lg cursor-pointer transition-all hover:shadow-xl h-[170px] relative overflow-hidden group ${isActive ? "ring-4 ring-offset-2 ring-blue-500 scale-[1.02]" : "hover:scale-[1.01]"
                   }`}
               >
-                <p className={`text-sm font-black uppercase tracking-[0.2em] mb-2 ${kpi.label === "Completed Projects" ? "text-emerald-50" : "text-gray-700"}`}>
+                <p className={`text-base font-black uppercase tracking-[0.2em] mb-2 ${kpi.label === "Completed Projects" ? "text-emerald-50" : "text-gray-700"}`}>
                   {kpi.label.replace(" Projects", "")}
                 </p>
                 <div className="flex items-center gap-3">
-                  <p className={`text-6xl font-black tracking-tight ${kpi.label === "Completed Projects" ? "text-white" : "text-gray-950"}`}>
+                  <p className={`text-7xl font-black tracking-tight ${kpi.label === "Completed Projects" ? "text-white" : "text-gray-950"}`}>
                     {kpi.value}
                   </p>
                 </div>
