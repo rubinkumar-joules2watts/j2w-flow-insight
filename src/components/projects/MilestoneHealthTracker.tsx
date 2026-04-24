@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MilestoneHealthData, MilestoneHealthPhase, WeekData, Milestone, useDeleteMilestonePracticeStatus } from "@/hooks/useData";
 import { Loader2, Pencil, Plus as PlusIcon, Trash2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { parseISO, getMonth, getYear, format } from 'date-fns';
 
 interface MilestoneHealthTrackerProps {
   data?: MilestoneHealthData;
@@ -556,21 +557,34 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       console.error("Delete failed:", err);
       alert(`Error deleting: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
-  };  // --- BACKEND-DRIVEN TIMELINE LOGIC ---
+  };  // --- DATE-FNS TIMELINE LOGIC ---
   const calendarMonths = data.calendar_months || [];
   const backendAllWeeks = data.all_weeks || {};
   const allMilestones = projectMilestones || [];
 
-  // 1. Generate Global Grid from calendar_months (STRICT counts)
+  // Generate Global Grid from calendar_months
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string; weeks_count: number }> = {};
   const monthOrder: string[] = [];
   const processedAllWeeks: Record<string, { start: string; label: string }> = {};
   
+  // Parse backend all_weeks to a list sorted by date
+  const sortedWeeksData = Object.entries(backendAllWeeks)
+    .map(([bIdx, wData]) => ({
+      originalId: parseInt(bIdx, 10),
+      startStr: wData.start,
+      date: parseISO(wData.start),
+      label: wData.label
+    }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Match the calendar columns with weeks
   let gridWeekCounter = 0;
+  
   calendarMonths.forEach((m) => {
     const monthKey = m.month_year;
     const startIdx = gridWeekCounter;
-    const endIdx = gridWeekCounter + m.weeks_count - 1;
+    const weeksCount = m.weeks_count;
+    const endIdx = gridWeekCounter + weeksCount - 1;
     
     monthGroups[monthKey] = {
       startIdx,
@@ -579,48 +593,46 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       weeks_count: m.weeks_count
     };
     monthOrder.push(monthKey);
-    
-    // Create placeholders
-    for (let i = 0; i < m.weeks_count; i++) {
-      const idx = gridWeekCounter + i;
-      processedAllWeeks[String(idx)] = {
-        start: "", 
-        label: `Week ${i + 1}`
+    gridWeekCounter += weeksCount;
+  });
+
+  // Pre-calculate mapping
+  const getGridIdxFromDate = (dateStr: string) => {
+      if (!dateStr) return -1;
+      const targetDate = parseISO(dateStr);
+      
+      const targetMonth = getMonth(targetDate) + 1;
+      const targetYear = getYear(targetDate);
+      
+      let gridWeekCounter = 0;
+      for (const m of calendarMonths) {
+          if (m.month === targetMonth && m.year === targetYear) {
+              const monthStart = new Date(m.year, m.month - 1, 1);
+              const diffDays = Math.floor((targetDate.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24));
+              const weekOffsetInMonth = diffDays >= 0 ? Math.floor(diffDays / 7) : 0;
+              return gridWeekCounter + Math.min(weekOffsetInMonth, m.weeks_count - 1);
+          }
+          gridWeekCounter += m.weeks_count;
+      }
+      
+      return -1;
+  };
+
+  // Populate processedAllWeeks for rendering placeholders mapped directly to their ID positions.
+  sortedWeeksData.forEach((w) => {
+      processedAllWeeks[String(w.originalId)] = {
+          start: w.startStr,
+          label: w.label
       };
-    }
-    gridWeekCounter += m.weeks_count;
   });
 
-  // 2. Align Backend Week Data (all_weeks) to the Global Grid
-  let dataWeekOffset = 0;
-  const firstWeekData = backendAllWeeks["0"];
-  if (firstWeekData && calendarMonths.length > 0) {
-    const gridStart = new Date(calendarMonths[0].year, calendarMonths[0].month - 1, 1);
-    // Use UTC to avoid timezone drift common in mid-month date math
-    const projectStart = new Date(firstWeekData.start.split("T")[0]);
-    
-    const diffMs = projectStart.getTime() - gridStart.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays > 0) {
-      dataWeekOffset = Math.ceil(diffDays / 7);
-    }
-  }
+  // Practice weeks directly tell us which grid column they belong to.
+  const getGridIdxFromBackendWeek = (backendWeekNum: number) => {
+      return backendWeekNum;
+  };
 
-  // Enrich processedAllWeeks with labels and accurate indices
-  Object.entries(backendAllWeeks).forEach(([bIdx, wData]) => {
-    const gridIdx = dataWeekOffset + parseInt(bIdx);
-    if (processedAllWeeks[String(gridIdx)]) {
-      processedAllWeeks[String(gridIdx)].label = wData.label;
-      processedAllWeeks[String(gridIdx)].start = wData.start;
-    }
-  });
-
-  // 3. Helper to map backend week number to grid index
-  const getGridIdxFromBackendWeek = (backendWeekNum: number) => dataWeekOffset + backendWeekNum;
-
-  // 4. Pre-calculate Health Matrix for easy lookup
-  const gridMatrix: Record<string, Record<number, any>> = {}; // [milestone_code_type]: { [gridIdx]: weekData }
+  // Pre-calculate Health Matrix for easy lookup
+  const gridMatrix: Record<string, Record<number, any>> = {}; 
 
   ["practice", "signoff", "invoice"].forEach(type => {
     const rows = data[type as keyof MilestoneHealthData] || [];
@@ -628,34 +640,34 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       const key = `${hm.milestone_code}-${type}`;
       if (!gridMatrix[key]) gridMatrix[key] = {};
       
-      // If it has weeks (Practice)
       if (hm.weeks) {
         hm.weeks.forEach((w: any) => {
           const gIdx = getGridIdxFromBackendWeek(w.week_number);
-          gridMatrix[key][gIdx] = w;
+          if (gIdx >= 0) gridMatrix[key][gIdx] = w;
         });
       } 
-      // If it has a single date (Signoff/Invoice)
+      
       if (hm.date) {
-        const mDate = hm.date.split("T")[0];
-        // Find which backend week matches this date
-        const bWeekEntry = Object.entries(backendAllWeeks).find(([_, info]) => info.start.startsWith(mDate));
-        if (bWeekEntry) {
-          const gIdx = getGridIdxFromBackendWeek(parseInt(bWeekEntry[0]));
-          
+        const gIdx = getGridIdxFromDate(hm.date);
+        if (gIdx >= 0) {
           const isDone = hm.status === 'Done' || hm.status === 'Completed';
           const isPartial = hm.status === 'Partial';
+          
+          const matchedWeek = sortedWeeksData.find((w) => w.originalId === gIdx);
+          
+          const fallbackLabel = format(parseISO(hm.date), "MMM d, yyyy");
+          
           gridMatrix[key][gIdx] = {
-            week_number: parseInt(bWeekEntry[0]),
+            week_number: matchedWeek ? matchedWeek.originalId : 0,
             status: hm.status || 'Pending',
             color: isDone ? 'blue' : isPartial ? 'indigo' : 'gray',
-            date: hm.date
+            date: hm.date,
+            week_label: matchedWeek?.label || fallbackLabel
           };
         }
       }
     });
   });
-;
 
   const phases: Array<{ type: "practice" | "signoff" | "invoice"; label: string }> = [
     { type: "practice", label: "PRACTICE" },
