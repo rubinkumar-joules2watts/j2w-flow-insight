@@ -566,7 +566,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string; weeks_count: number }> = {};
   const monthOrder: string[] = [];
   const processedAllWeeks: Record<string, { start: string; label: string }> = {};
-  
+
   // Parse backend all_weeks to a list sorted by date
   const sortedWeeksData = Object.entries(backendAllWeeks)
     .map(([bIdx, wData]) => ({
@@ -579,13 +579,13 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
 
   // Match the calendar columns with weeks
   let gridWeekCounter = 0;
-  
+
   calendarMonths.forEach((m) => {
     const monthKey = m.month_year;
     const startIdx = gridWeekCounter;
     const weeksCount = m.weeks_count;
     const endIdx = gridWeekCounter + weeksCount - 1;
-    
+
     monthGroups[monthKey] = {
       startIdx,
       endIdx,
@@ -598,66 +598,66 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
 
   // Pre-calculate mapping
   const getGridIdxFromDate = (dateStr: string) => {
-      if (!dateStr) return -1;
-      const targetDate = parseISO(dateStr);
-      
-      const targetMonth = getMonth(targetDate) + 1;
-      const targetYear = getYear(targetDate);
-      
-      let gridWeekCounter = 0;
-      for (const m of calendarMonths) {
-          if (m.month === targetMonth && m.year === targetYear) {
-              const monthStart = new Date(m.year, m.month - 1, 1);
-              const startDayOfWeek = monthStart.getDay(); // 0 = Sunday
-              const diffDays = Math.floor((targetDate.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24));
-              const weekOffsetInMonth = diffDays >= 0 ? Math.floor((diffDays + startDayOfWeek) / 7) : 0;
-              return gridWeekCounter + Math.min(weekOffsetInMonth, m.weeks_count - 1);
-          }
-          gridWeekCounter += m.weeks_count;
+    if (!dateStr) return -1;
+    const targetDate = parseISO(dateStr);
+
+    const targetMonth = getMonth(targetDate) + 1;
+    const targetYear = getYear(targetDate);
+
+    let gridWeekCounter = 0;
+    for (const m of calendarMonths) {
+      if (m.month === targetMonth && m.year === targetYear) {
+        const monthStart = new Date(m.year, m.month - 1, 1);
+        const startDayOfWeek = monthStart.getDay(); // 0 = Sunday
+        const diffDays = Math.floor((targetDate.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24));
+        const weekOffsetInMonth = diffDays >= 0 ? Math.floor((diffDays + startDayOfWeek) / 7) : 0;
+        return gridWeekCounter + Math.min(weekOffsetInMonth, m.weeks_count - 1);
       }
-      
-      return -1;
+      gridWeekCounter += m.weeks_count;
+    }
+
+    return -1;
   };
 
   // Populate processedAllWeeks for rendering placeholders mapped directly to their ID positions.
   sortedWeeksData.forEach((w) => {
-      processedAllWeeks[String(w.originalId)] = {
-          start: w.startStr,
-          label: w.label
-      };
+    processedAllWeeks[String(w.originalId)] = {
+      start: w.startStr,
+      label: w.label
+    };
   });
 
   // Practice weeks directly tell us which grid column they belong to.
   const getGridIdxFromBackendWeek = (backendWeekNum: number) => {
-      return backendWeekNum;
+    return backendWeekNum;
   };
 
   // Pre-calculate Health Matrix for easy lookup
-  const gridMatrix: Record<string, Record<number, any>> = {}; 
+  const gridMatrix: Record<string, Record<number, any>> = {};
 
   ["practice", "signoff", "invoice"].forEach(type => {
     const rows = data[type as keyof MilestoneHealthData] || [];
     rows.forEach((hm: any) => {
       const key = `${hm.milestone_code}-${type}`;
       if (!gridMatrix[key]) gridMatrix[key] = {};
-      
+
       if (hm.weeks) {
         hm.weeks.forEach((w: any) => {
           const gIdx = getGridIdxFromBackendWeek(w.week_number);
           if (gIdx >= 0) gridMatrix[key][gIdx] = w;
         });
-      } 
-      
+      }
+
       if (hm.date) {
         const gIdx = getGridIdxFromDate(hm.date);
         if (gIdx >= 0) {
           const isDone = hm.status === 'Done' || hm.status === 'Completed';
           const isPartial = hm.status === 'Partial';
-          
+
           const matchedWeek = sortedWeeksData.find((w) => w.originalId === gIdx);
-          
+
           const fallbackLabel = format(parseISO(hm.date), "MMM d, yyyy");
-          
+
           gridMatrix[key][gIdx] = {
             week_number: matchedWeek ? matchedWeek.originalId : 0,
             status: hm.status || 'Pending',
@@ -693,13 +693,14 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
           <div className="flex border-b border-gray-200 bg-gray-50">
             <div className="w-48 flex-shrink-0 border-r border-gray-200" />
             {monthOrder.map((monthKey) => {
-              const { startIdx, endIdx, label } = monthGroups[monthKey];
+              const { startIdx, endIdx, label, weeks_count } = monthGroups[monthKey];
               const weekCount = endIdx - startIdx + 1;
+              const colWidth = weeks_count * 40;
               return (
                 <div
                   key={monthKey}
                   className="flex-shrink-0 border-r border-gray-200 py-2 px-2 text-center font-semibold text-xs text-gray-700"
-                  style={{ width: `${weekCount * 40}px` }}
+                  style={{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }}
                 >
                   {label}
                 </div>
@@ -711,15 +712,19 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
           <div className="flex border-b border-gray-200 bg-gray-50">
             <div className="w-48 flex-shrink-0 border-r border-gray-200" />
             {monthOrder.map((monthKey) => {
-              const { startIdx, endIdx } = monthGroups[monthKey];
+              const { startIdx, endIdx, weeks_count } = monthGroups[monthKey];
+              const colWidth = weeks_count * 40;
               const weeks = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
               return (
-                <div key={`${monthKey}-weeks`} className="flex border-r border-gray-200">
+                <div
+                  key={`${monthKey}-weeks`}
+                  className="flex flex-shrink-0 border-r border-gray-200"
+                  style={{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }}
+                >
                   {weeks.map((wNum, i) => (
                     <div
                       key={`${monthKey}-week-${wNum}`}
-                      className={`flex-shrink-0 flex items-center justify-center text-center py-1 text-[9px] text-gray-500 font-medium ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
-                      style={{ width: "40px" }}
+                      className={`flex-1 flex items-center justify-center text-center py-1 text-[9px] text-gray-500 font-medium ${i < weeks.length - 1 ? "border-r border-gray-200" : ""}`}
                     >
                       W{i + 1}
                     </div>
@@ -742,10 +747,15 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
 
               {/* Milestone Data Cells */}
               {monthOrder.map((monthKey) => {
-                const { startIdx, endIdx } = monthGroups[monthKey];
+                const { startIdx, endIdx, weeks_count } = monthGroups[monthKey];
+                const colWidth = weeks_count * 40;
                 const weeksInMonth = Array.from({ length: endIdx - startIdx + 1 }).map((_, i) => startIdx + i);
                 return (
-                  <div key={`${phase.type}-${monthKey}`} className="flex border-r border-gray-200">
+                  <div
+                    key={`${phase.type}-${monthKey}`}
+                    className="flex flex-shrink-0 border-r border-gray-200"
+                    style={{ width: `${colWidth}px`, minWidth: `${colWidth}px`, maxWidth: `${colWidth}px` }}
+                  >
                     {weeksInMonth.map((weekIdx, i) => {
                       const weekMeta = processedAllWeeks[String(weekIdx)];
                       const weekLabel = weekMeta?.label || `Week ${weekIdx}`;
@@ -809,8 +819,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                       return (
                         <div
                           key={`${phase.type}-${weekIdx}`}
-                          className={`flex-shrink-0 flex flex-col items-center justify-around p-0 ${i < weeksInMonth.length - 1 ? "border-r border-gray-200" : ""}`}
-                          style={{ width: "40px", minHeight: "40px" }}
+                          className={`flex-1 flex flex-col items-center justify-around p-0 overflow-hidden ${i < weeksInMonth.length - 1 ? "border-r border-gray-200" : ""}`}
                         >
                           {cellContent}
                         </div>

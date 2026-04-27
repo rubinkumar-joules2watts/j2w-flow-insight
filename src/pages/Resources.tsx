@@ -64,20 +64,15 @@ const Resources = () => {
   }, [qc]);
 
   const getProjectsForGroup = (group: TeamMember[]) => {
-    const results: { projectName: string; role: string; engagementPct?: number }[] = [];
+    const results: { projectName: string; role: string }[] = [];
     const memberIds = group.map(m => m.id);
 
     assignments?.filter((a) => memberIds.includes(a.team_member_id || "")).forEach((a) => {
       const p = projects?.find((pr) => pr.id === a.project_id);
       if (p) {
-        const member = group.find(m => m.id === a.team_member_id);
-        const engagement = member?.engagements?.find(e => e.project_id === p.id);
-        const engagementPct = engagement ? parseInt(engagement.engagement_level) : undefined;
-        
         results.push({
           projectName: p.name,
-          role: a.role_on_project || member?.role || "Resource",
-          engagementPct: isNaN(engagementPct as any) ? undefined : engagementPct
+          role: a.role_on_project || group.find(m => m.id === a.team_member_id)?.role || "Resource"
         });
       }
     });
@@ -323,12 +318,7 @@ const Resources = () => {
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
                         </div>
-                        <div className="ml-2 flex items-center gap-1.5">
-                          {p.engagementPct !== undefined && p.engagementPct > 0 && (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${p.engagementPct > 80 ? 'bg-emerald-100 text-emerald-600' : p.engagementPct >= 50 ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
-                              {p.engagementPct}%
-                            </span>
-                          )}
+                        <div className="ml-2">
                           <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
                             {p.projectName}
                           </span>

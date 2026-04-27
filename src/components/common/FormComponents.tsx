@@ -1,5 +1,35 @@
-import React from "react";
-import { X } from "lucide-react";
+import React, { useEffect } from "react";
+import { X, Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Heading3, Table as TableIcon } from "lucide-react";
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import TextAlign from '@tiptap/extension-text-align';
+import Underline from '@tiptap/extension-underline';
+import { Color } from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
+
+const CustomTableCell = TableCell.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      backgroundColor: {
+        default: null,
+        parseHTML: element => element.getAttribute('bgcolor') || element.style.backgroundColor || element.style.background || null,
+        renderHTML: attributes => {
+          if (!attributes.backgroundColor) {
+            return {};
+          }
+          return {
+            style: `background-color: ${attributes.backgroundColor}`,
+          };
+        },
+      },
+    };
+  },
+});
 
 /* ===== Form Input ===== */
 export const FormInput = ({
@@ -304,3 +334,152 @@ export const FormSection = ({
     <div className="space-y-3">{children}</div>
   </div>
 );
+
+/* ===== Form Rich Text Editor ===== */
+const MenuBar = ({ editor }: { editor: any }) => {
+  if (!editor) {
+    return null;
+  }
+
+  const toggleBtnClass = (isActive: boolean) => 
+    `p-1.5 rounded transition-colors ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
+
+  return (
+    <div className="flex flex-wrap gap-1 p-2 border-b border-gray-200 bg-gray-50 rounded-t-lg items-center">
+      <button type="button" onClick={() => editor.chain().focus().toggleBold().run()} className={toggleBtnClass(editor.isActive('bold'))} title="Bold">
+        <Bold size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().toggleItalic().run()} className={toggleBtnClass(editor.isActive('italic'))} title="Italic">
+        <Italic size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().toggleUnderline().run()} className={toggleBtnClass(editor.isActive('underline'))} title="Underline">
+        <UnderlineIcon size={16} />
+      </button>
+      
+      <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
+      <button type="button" onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className={toggleBtnClass(editor.isActive('heading', { level: 1 }))} title="Heading 1">
+        <Heading1 size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={toggleBtnClass(editor.isActive('heading', { level: 2 }))} title="Heading 2">
+        <Heading2 size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} className={toggleBtnClass(editor.isActive('heading', { level: 3 }))} title="Heading 3">
+        <Heading3 size={16} />
+      </button>
+
+      <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
+      <button type="button" onClick={() => editor.chain().focus().setTextAlign('left').run()} className={toggleBtnClass(editor.isActive({ textAlign: 'left' }))} title="Align Left">
+        <AlignLeft size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().setTextAlign('center').run()} className={toggleBtnClass(editor.isActive({ textAlign: 'center' }))} title="Align Center">
+        <AlignCenter size={16} />
+      </button>
+      <button type="button" onClick={() => editor.chain().focus().setTextAlign('right').run()} className={toggleBtnClass(editor.isActive({ textAlign: 'right' }))} title="Align Right">
+        <AlignRight size={16} />
+      </button>
+
+      <div className="w-px h-4 bg-gray-300 mx-1"></div>
+
+      <button type="button" onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} className={toggleBtnClass(false)} title="Insert Table">
+        <TableIcon size={16} />
+      </button>
+
+      {editor.isActive('table') && (
+        <div className="flex bg-gray-200/50 p-0.5 rounded gap-1 ml-2">
+          <button type="button" onClick={() => editor.chain().focus().addColumnBefore().run()} className="text-[10px] px-1.5 py-0.5 font-bold bg-white rounded shadow-sm hover:bg-gray-50 text-gray-700">
+            +Col
+          </button>
+          <button type="button" onClick={() => editor.chain().focus().deleteColumn().run()} className="text-[10px] px-1.5 py-0.5 font-bold bg-red-50 text-red-600 rounded shadow-sm hover:bg-red-100">
+            -Col
+          </button>
+          <div className="w-px h-4 bg-gray-300 mx-0.5 my-auto"></div>
+          <button type="button" onClick={() => editor.chain().focus().addRowAfter().run()} className="text-[10px] px-1.5 py-0.5 font-bold bg-white rounded shadow-sm hover:bg-gray-50 text-gray-700">
+            +Row
+          </button>
+          <button type="button" onClick={() => editor.chain().focus().deleteRow().run()} className="text-[10px] px-1.5 py-0.5 font-bold bg-red-50 text-red-600 rounded shadow-sm hover:bg-red-100">
+            -Row
+          </button>
+          <div className="w-px h-4 bg-gray-300 mx-0.5 my-auto"></div>
+          <button type="button" onClick={() => editor.chain().focus().deleteTable().run()} className="text-[10px] px-1.5 py-0.5 font-bold bg-red-100 text-red-700 rounded shadow-sm hover:bg-red-200">
+            Del Table
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const FormRichTextEditor = ({
+  label,
+  value,
+  onChange,
+  required = false,
+  minHeight = "min-h-[150px]",
+}: {
+  label?: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  minHeight?: string;
+}) => {
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      CustomTableCell,
+      TextStyle,
+      Color,
+    ],
+    content: value,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML());
+    },
+    editorProps: {
+      attributes: {
+        class: `prose prose-sm max-w-none focus:outline-none p-3 ${minHeight} w-full text-xs j2w-rich-text`,
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (!editor) return;
+    const currentHtml = editor.getHTML();
+    
+    if (value === currentHtml) return;
+    
+    // Tolerate mismatch when parent passes '' and editor defaults to '<p></p>'
+    if ((!value || value === '<p></p>') && currentHtml === '<p></p>') {
+      return;
+    }
+
+    editor.commands.setContent(value || '', false);
+  }, [value, editor]);
+
+  return (
+    <div className="flex flex-col w-full">
+      {label && (
+        <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
+          {label}
+          {required && <span className="text-red-500 ml-1">*</span>}
+        </label>
+      )}
+      <div className="rounded-lg border border-gray-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-blue-500/30 focus-within:border-blue-500 transition-all">
+        <MenuBar editor={editor} />
+        <div className="overflow-y-auto max-h-[400px] custom-scrollbar text-gray-900 leading-normal">
+          <EditorContent editor={editor} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
