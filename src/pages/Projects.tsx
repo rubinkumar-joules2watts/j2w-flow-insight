@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
-import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection, FormTextarea } from "@/components/common/FormComponents";
+import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection, FormTextarea, FormRichTextEditor } from "@/components/common/FormComponents";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth, useEngagement, useUpdateEngagement, type ProjectUpdate, type ProjectDocument } from "@/hooks/useData";
 import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTracker";
 import { api, apiUrl } from "@/lib/api";
@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
+import DOMPurify from 'dompurify';
 
 const formatDateReadable = (value: string | null | undefined) => {
   if (!value) return "-";
@@ -1249,14 +1250,13 @@ const Projects = () => {
                     </div>
                   </div>
                   <div className="relative flex-1">
-                    <input
-                      value={newUpdate}
-                      onChange={(e) => setNewUpdate(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleAddUpdate()}
-                      placeholder="Type project update or activity detail here... (e.g. SOW Signed)"
-                      className="w-full rounded-lg border border-border bg-secondary/30 px-4 py-2.5 pr-12 text-sm outline-none transition-all focus:border-primary/50 focus:bg-background focus:ring-2 focus:ring-primary/10 h-[42px]"
-                      disabled={isAddingUpdate}
-                    />
+                    <div className="w-full">
+                      <FormRichTextEditor
+                        value={newUpdate}
+                        onChange={(val) => setNewUpdate(val)}
+                        minHeight="min-h-[200px]"
+                      />
+                    </div>
                     <div className="absolute right-2 top-1.5 flex items-center gap-1">
                       <button
                         type="button"
@@ -1408,11 +1408,10 @@ const Projects = () => {
                                 </div>
                               </div>
                               <div
-                                className="text-xs text-foreground whitespace-pre-wrap leading-relaxed mb-2 line-clamp-3 overflow-hidden"
+                                className="text-xs text-foreground leading-relaxed mb-2 line-clamp-3 overflow-hidden prose prose-sm prose-p:my-0 j2w-rich-text"
                                 title="Click to view full content"
-                              >
-                                {u.content}
-                              </div>
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(u.content) }}
+                              />
 
                               {getUpdateAttachments(u).length > 0 && (
                                 <div className="mt-auto flex flex-col gap-1.5 pt-2 border-t border-primary/5">
@@ -2182,7 +2181,7 @@ const Projects = () => {
             title="Timeline Activity"
             isOpen={!!viewingUpdateRecord}
             onClose={() => setViewingUpdateRecord(null)}
-            maxWidth="max-w-xl"
+            maxWidth="max-w-5xl"
           >
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-gray-100 pb-4">
@@ -2212,9 +2211,10 @@ const Projects = () => {
 
               <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-5">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Content</p>
-                <div className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap max-h-[400px] overflow-y-auto pr-2 custom-scrollbar font-medium">
-                  {viewingUpdateRecord.content}
-                </div>
+                <div 
+                  className="prose prose-sm max-w-none text-sm text-gray-800 leading-relaxed max-h-[500px] min-h-[300px] overflow-y-auto pr-2 custom-scrollbar font-medium j2w-rich-text"
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingUpdateRecord.content) }}
+                />
               </div>
 
               {getUpdateAttachments(viewingUpdateRecord).length > 0 && (
@@ -2267,7 +2267,7 @@ const Projects = () => {
             title="Edit Timeline Activity"
             isOpen={!!editingUpdateRecord}
             onClose={() => setEditingUpdateRecord(null)}
-            maxWidth="max-w-2xl"
+            maxWidth="max-w-5xl"
           >
             <FormSection title="Activity Details">
               <div className="grid grid-cols-2 gap-4">
@@ -2284,12 +2284,11 @@ const Projects = () => {
                   onChange={(val) => setEditingUpdateRecord({ ...editingUpdateRecord, activity_date: val })}
                 />
               </div>
-              <FormTextarea
+              <FormRichTextEditor
                 label="Timeline Content"
-                rows={10}
                 value={editingUpdateRecord.content}
                 onChange={(val) => setEditingUpdateRecord({ ...editingUpdateRecord, content: val })}
-                placeholder="Describe the activity..."
+                minHeight="min-h-[200px]"
               />
             </FormSection>
             <FormActions
@@ -2421,7 +2420,10 @@ const Projects = () => {
                 <div className="mb-4">
                   <h3 className="text-lg font-bold text-gray-900">Delete Update</h3>
                   <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete this update from <span className="font-semibold">{formatDateReadable(update.activity_date)}</span>?</p>
-                  <p className="mt-2 text-xs text-gray-500 line-clamp-2 italic">"{update.content}"</p>
+                  <div 
+                    className="mt-2 text-xs text-gray-500 line-clamp-3 italic prose prose-sm prose-p:my-0 prose-headings:my-0 j2w-rich-text"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(update.content) }}
+                  />
                   <p className="mt-2 text-xs text-red-500">This action cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">

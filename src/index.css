@@ -112,3 +112,50 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground));
 }
+
+/* Rich Text Editor and Viewer Styles */
+.j2w-rich-text table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+.j2w-rich-text table td, .j2w-rich-text table th {
+  min-width: 1em;
+  border: 1px solid #e5e7eb;
+  padding: 3px 5px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+.j2w-rich-text table th {
+  font-weight: bold;
+  text-align: left;
+  background-color: #f9fafb;
+}
+.j2w-rich-text p {
+  margin: 0.25rem 0;
+  min-height: 1rem;
+}
+.j2w-rich-text h1 { font-size: 1.5em; font-weight: bold; margin: 0.5rem 0; }
+.j2w-rich-text h2 { font-size: 1.25em; font-weight: bold; margin: 0.5rem 0; }
+.j2w-rich-text h3 { font-size: 1.1em; font-weight: bold; margin: 0.5rem 0; }
+
+/* Table resize handles */
+.j2w-rich-text .tableWrapper {
+  overflow-x: auto;
+}
+.j2w-rich-text table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #3b82f6; /* Tailwind blue-500 */
+  pointer-events: none;
+}
+.j2w-rich-text.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}

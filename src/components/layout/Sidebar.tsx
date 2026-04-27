@@ -26,9 +26,9 @@ const Sidebar = () => {
             <img src={j2wLogo} alt="Joules Watts" className="h-full w-auto object-contain" />
           </div>
           {isExpanded && (
-            <div className="flex flex-col">
-              <span className="text-base font-bold text-gray-900 leading-tight">Delivery</span>
-              <span className="text-xs text-blue-600 font-bold tracking-[0.2em] uppercase">Tracker</span>
+            <div className="flex flex-col text-left whitespace-nowrap">
+              <span className="text-lg font-extrabold text-gray-900 leading-tight">Practice Delivery</span>
+              <span className="text-sm text-blue-600 font-bold tracking-[0.2em] uppercase">Tracker</span>
             </div>
           )}
         </div>
