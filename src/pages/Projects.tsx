@@ -4,7 +4,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
 import { FormInput, FormSelect, FormCheckboxGroup, FormModal, FormActions, FormSection, FormTextarea } from "@/components/common/FormComponents";
-import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth, useEngagement, useUpdateEngagement } from "@/hooks/useData";
+import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments, useAuditLog, useProjectUpdates, useProjectDocuments, useMilestoneHealth, useEngagement, useUpdateEngagement, type ProjectUpdate, type ProjectDocument } from "@/hooks/useData";
 import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTracker";
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
