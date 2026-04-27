@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { apiUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { Loader2, Download, Edit2, Wand2, Search, FileText, X, Check } from "lucide-react";
 
@@ -157,8 +158,7 @@ const Insights = () => {
 
   const fetchProjects = async () => {
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const response = await fetch(`${baseUrl}/api/projects`);
+      const response = await fetch(apiUrl("/api/projects"));
       const data = await response.json();
       setProjects(Array.isArray(data) ? data : []);
     } catch (error) {
@@ -206,13 +206,12 @@ const Insights = () => {
     setIsGenerating(true);
 
     const generated: ProjectReport[] = [];
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
     for (const projectId of orderedIds) {
       try {
         updateProgress(projectId, { status: "reading", detail: "Reading project history..." });
 
-        const response = await fetch(`${baseUrl}/api/reports/generate`, {
+        const response = await fetch(apiUrl("/api/reports/generate"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -261,8 +260,7 @@ const Insights = () => {
     setExportFiles([]);
 
     try {
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const response = await fetch(`${baseUrl}/api/export-status-report`, {
+      const response = await fetch(apiUrl("/api/export-status-report"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -286,7 +284,7 @@ const Insights = () => {
       setExportFiles(normalized);
 
       if (normalized[0]) {
-        const fileUrl = `${baseUrl}${normalized[0].download_url}`;
+        const fileUrl = apiUrl(normalized[0].download_url);
         const fileResp = await fetch(fileUrl);
         if (!fileResp.ok) {
           throw new Error("Failed to download exported file");
@@ -591,7 +589,7 @@ const Insights = () => {
                         {exportFiles.map((file) => (
                           <a
                             key={file.file_name}
-                            href={`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}${file.download_url}`}
+                            href={apiUrl(file.download_url)}
                             className="flex items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all group"
                             download={file.file_name}
                           >
