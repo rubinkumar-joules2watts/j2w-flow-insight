@@ -6,6 +6,7 @@ import Overview from "./pages/Overview";
 import Projects from "./pages/Projects";
 import Resources from "./pages/Resources";
 import Proposal from "./pages/Proposal";
+import Insights from "./pages/Insights";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,6 +19,7 @@ const AppInner = () => {
         <Route path="/projects" element={<Projects />} />
         <Route path="/resources" element={<Resources />} />
         <Route path="/proposal" element={<Proposal />} />
+        <Route path="/insights" element={<Insights />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
