@@ -7,7 +7,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Overview", path: "/", description: "Dashboard & KPIs" },
   { icon: FolderKanban, label: "Projects", path: "/projects", description: "Project Management" },
   { icon: Users, label: "Resources", path: "/resources", description: "Team & Allocation" },
-  { icon: Wand2, label: "Insights", path: "/insights", description: "AI Status Reports" },
+  { icon: Wand2, label: "Project Summary", path: "/insights", description: "AI Status Reports" },
   // { icon: FileText, label: "Proposal", path: "/proposal", description: "Planning & Resources" },
 ];
 

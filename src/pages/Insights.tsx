@@ -44,9 +44,6 @@ type ProjectProgress = {
   detail: string;
 };
 
-type BatchMode = "single" | "per_project";
-type ExportFormat = "docx" | "pdf";
-
 const getCurrentMonthRange = () => {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -144,8 +141,6 @@ const Insights = () => {
 
   const [reports, setReports] = useState<ProjectReport[] | null>(null);
 
-  const [batchMode, setBatchMode] = useState<BatchMode>("single");
-  const [exportFormat, setExportFormat] = useState<ExportFormat>("docx");
   const [isExporting, setIsExporting] = useState(false);
   const [exportFiles, setExportFiles] = useState<Array<{ file_name: string; download_url: string }>>([]);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -256,13 +251,12 @@ const Insights = () => {
     }
   };
 
-  const handleExport = async (formatOverride?: ExportFormat) => {
+  const handleExport = async () => {
     if (!reports || reports.length === 0) {
       toast.error("No reports available to export");
       return;
     }
 
-    const activeFormat = formatOverride || exportFormat;
     setIsExporting(true);
     setExportFiles([]);
 
@@ -273,8 +267,8 @@ const Insights = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reports,
-          batch_mode: batchMode,
-          format: activeFormat,
+          batch_mode: "single",
+          format: "pdf",
           file_name: `status_report_${startDate}_${endDate}`,
         }),
       });
@@ -407,7 +401,7 @@ const Insights = () => {
               <Button
                 onClick={handleGenerate}
                 disabled={isGenerating || selectedProjectIds.length === 0}
-                className="w-full h-12 bg-slate-900 hover:bg-black text-white font-black text-sm gap-2 rounded-xl shadow-lg transition-all active:scale-95"
+                className="w-full h-12 font-black text-sm gap-2 rounded-xl shadow-lg transition-all active:scale-95"
               >
                 {isGenerating ? <Loader2 className="animate-spin" /> : <Wand2 size={16} />}
                 Generate Reports
@@ -433,23 +427,10 @@ const Insights = () => {
 
                 <div className="h-6 w-[1px] bg-slate-200" />
 
-                <div className="flex items-center gap-1">
-                  <select
-                    value={batchMode}
-                    onChange={(e) => setBatchMode(e.target.value as BatchMode)}
-                    className="h-9 px-3 text-xs font-bold text-slate-700 bg-transparent border-none focus:ring-0 cursor-pointer"
-                  >
-                    <option value="single">Unified PDF</option>
-                    <option value="per_project">Split Files</option>
-                  </select>
-                </div>
-
-                <div className="h-6 w-[1px] bg-slate-200" />
-
                 <Button
-                  onClick={() => handleExport("pdf")}
+                  onClick={handleExport}
                   disabled={isExporting}
-                  className="gap-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl px-4 h-10 shadow-lg transition-all active:scale-95"
+                  className="gap-2 rounded-xl px-4 h-10 shadow-lg transition-all active:scale-95"
                 >
                   {isExporting ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
                   <span className="font-bold text-xs">Download PDF</span>
