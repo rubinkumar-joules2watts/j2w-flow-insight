@@ -26,6 +26,13 @@ export type TeamMember = {
   engagement_pct: number | null; color_hex: string | null;
   is_active: boolean | null;
   skills: string[] | null;
+  engagements?: {
+    id: string;
+    team_member_id: string;
+    project_id: string;
+    engagement_level: string;
+    project_name?: string;
+  }[];
 };
 export type ProjectAssignment = {
   id: string; project_id: string | null; team_member_id: string | null;

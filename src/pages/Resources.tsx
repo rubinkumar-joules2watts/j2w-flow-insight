@@ -28,30 +28,21 @@ const Resources = () => {
   const [memberRoleFilter, setMemberRoleFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
 
-  // Group members by name to consolidate personas
-  const groupedMembers = (members || []).reduce((acc, m) => {
+  const filteredMembers = (members || []).filter((m) => {
     const name = (m.name || "").trim();
-    if (!name) return acc;
-    if (!acc[name]) acc[name] = [];
-    acc[name].push(m);
-    return acc;
-  }, {} as Record<string, TeamMember[]>);
+    if (!name) return false;
 
-  const uniqueNames = Object.keys(groupedMembers).sort();
-
-  const filteredNames = uniqueNames.filter((name) => {
-    const group = groupedMembers[name];
     const bySearch = !memberSearch.trim() || name.toLowerCase().includes(memberSearch.toLowerCase().trim());
     if (!bySearch) return false;
 
-    const byRole = memberRoleFilter === "all" || group.some((m) => (m.role || "") === memberRoleFilter);
+    const byRole = memberRoleFilter === "all" || (m.role || "") === memberRoleFilter;
     if (!byRole) return false;
 
-    const byProject = projectFilter === "all" || group.some((m) => (assignments || []).some((a) => a.team_member_id === m.id && a.project_id === projectFilter));
+    const byProject = projectFilter === "all" || (m.engagements || []).some((e: any) => e.project_id === projectFilter);
     if (!byProject) return false;
 
     return true;
-  });
+  }).sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   const filteredProjects = projectFilter === "all" ? (projects || []) : (projects || []).filter((p) => p.id === projectFilter);
 
@@ -63,16 +54,16 @@ const Resources = () => {
     return () => { api.removeChannel(channel); };
   }, [qc]);
 
-  const getProjectsForGroup = (group: TeamMember[]) => {
-    const results: { projectName: string; role: string }[] = [];
-    const memberIds = group.map(m => m.id);
+  const getProjectsForMember = (member: TeamMember) => {
+    const results: { projectName: string; role: string; engagementLevel: string }[] = [];
 
-    assignments?.filter((a) => memberIds.includes(a.team_member_id || "")).forEach((a) => {
-      const p = projects?.find((pr) => pr.id === a.project_id);
+    (member.engagements || []).forEach((e: any) => {
+      const p = projects?.find((pr) => pr.id === e.project_id);
       if (p) {
         results.push({
           projectName: p.name,
-          role: a.role_on_project || group.find(m => m.id === a.team_member_id)?.role || "Resource"
+          role: member.role || "Resource",
+          engagementLevel: e.engagement_level || "0"
         });
       }
     });
@@ -95,7 +86,7 @@ const Resources = () => {
     setLoadingSuggestions(true);
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}api/designations/skills`, {
+      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/designations/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ designation: title })
@@ -156,44 +147,29 @@ const Resources = () => {
     setConfirmToggle(null);
   };
 
-  const handleDeleteGroup = async (name: string) => {
-    const group = groupedMembers[name];
-    if (!group) return;
-
-    for (const member of group) {
-      const memberAssignments = assignments?.filter((a) => a.team_member_id === member.id) || [];
-      for (const a of memberAssignments) {
-        const { error } = await api.from("project_assignments").delete().eq("id", a.id);
-        if (error) {
-          toast.error(`Failed to delete assignments for ${member.name}`);
-          return;
-        }
-        await writeAuditLog("project_assignments", a.id, "DELETE", a, null);
-      }
-
-      const { error } = await api.from("team_members").delete().eq("id", member.id);
+  const handleDeleteMember = async (name: string) => {
+    const memberToDelete = members?.find(m => m.name === name);
+    if (!memberToDelete) return;
+      const { error } = await api.from("team_members").delete().eq("id", memberToDelete.id);
       if (error) {
-        toast.error(`Failed to delete member record for ${member.name}`);
+        toast.error(`Failed to delete member record for ${name}`);
         return;
       }
-      await writeAuditLog("team_members", member.id, "DELETE", member as any, null);
-    }
+      await writeAuditLog("team_members", memberToDelete.id, "DELETE", memberToDelete as any, null);
 
     qc.invalidateQueries({ queryKey: ["team_members"] });
     qc.invalidateQueries({ queryKey: ["project_assignments"] });
-    toast.success(`✓ Consolidated profile for ${name} deleted · ${new Date().toLocaleTimeString()}`);
+    toast.success(`✓ Member profile for ${name} deleted · ${new Date().toLocaleTimeString()}`);
     setConfirmDeleteMember(null);
     if (editMember && members?.find(m => m.id === editMember)?.name === name) {
       setEditMember(null);
     }
   };
 
-  // Effort data - based on grouped names
-  const effortData = filteredNames.map((name) => {
-    const group = groupedMembers[name];
-    const memberIds = group.map(m => m.id);
-    const totalHours = assignments?.filter((a) => memberIds.includes(a.team_member_id || "")).reduce((s, a) => s + (a.allocated_hours_per_week || 8), 0) || 0;
-    return { name: name, hours: totalHours, color: group[0].color_hex || "#666" };
+  // Effort data
+  const effortData = filteredMembers.map((m) => {
+    const totalEng = (m.engagements || []).reduce((s: number, e: any) => s + Number(e.engagement_level || 0), 0);
+    return { name: m.name, hours: totalEng, color: m.color_hex || "#666" };
   }).filter((d) => d.hours > 0) || [];
 
   // Gantt months
@@ -262,12 +238,10 @@ const Resources = () => {
           </button>
         </div>
         <div className="grid grid-cols-4 gap-3">
-          {filteredNames.map((name) => {
-            const group = groupedMembers[name];
-            const primaryMember = group[0];
-            const memberProjects = getProjectsForGroup(group);
+          {filteredMembers.map((primaryMember) => {
+            const memberProjects = getProjectsForMember(primaryMember);
             return (
-              <div key={name} onClick={() => setEditMember(primaryMember.id)} className="group cursor-pointer rounded-2xl border border-gray-300 bg-white shadow-sm hover:border-blue-500/50 hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
+              <div key={primaryMember.id} onClick={() => setEditMember(primaryMember.id)} className="group cursor-pointer rounded-2xl border border-gray-300 bg-white shadow-sm hover:border-blue-500/50 hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
                 {/* Card Header: Initials + Name */}
                 <div className="flex items-center gap-3 p-4 bg-gray-100/50 border-b border-gray-200">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md border-2 border-white" style={{
@@ -276,7 +250,7 @@ const Resources = () => {
                     {primaryMember.initials}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate leading-tight">{name}</p>
+                    <p className="text-sm font-bold text-gray-900 truncate leading-tight">{primaryMember.name}</p>
                     <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
                       primaryMember.resource_type === 'Consultant' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
                         "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
@@ -314,11 +288,14 @@ const Resources = () => {
                     </div>
                   ) : (
                     memberProjects.map((p, pIdx) => (
-                      <div key={`${name}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
+                      <div key={`${primaryMember.id}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
                         <div className="min-w-0 flex-1">
                           <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
                         </div>
-                        <div className="ml-2">
+                        <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
+                          <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/50">
+                            {p.engagementLevel}%
+                          </span>
                           <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
                             {p.projectName}
                           </span>
@@ -330,7 +307,7 @@ const Resources = () => {
 
                 {/* Card Footer: Actions */}
                 <div className="mt-auto px-4 py-2 bg-gray-50/30 border-t border-gray-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => setConfirmDeleteMember(name)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-all" title="Delete Consolidated Profile">
+                  <button onClick={() => setConfirmDeleteMember(primaryMember.name)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-all" title="Delete Member Profile">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -357,16 +334,14 @@ const Resources = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredNames.map((name, idx) => {
-                  const group = groupedMembers[name];
-                  const primaryMember = group[0];
+                {filteredMembers.map((primaryMember, idx) => {
                   const isEvenRow = idx % 2 === 0;
                   return (
-                    <tr key={name} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
-                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{name}</td>
+                    <tr key={primaryMember.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
+                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{primaryMember.name}</td>
                       {filteredProjects.map((p) => {
-                        const isAssigned = group.some((m) => assignments?.some((a) => a.team_member_id === m.id && a.project_id === p.id));
-                        const isConfirming = group.some((m) => confirmToggle?.memberId === m.id && confirmToggle?.projectId === p.id);
+                        const isAssigned = (primaryMember.engagements || []).some((e: any) => e.project_id === p.id);
+                        const isConfirming = confirmToggle?.memberId === primaryMember.id && confirmToggle?.projectId === p.id;
                         return (
                           <td key={p.id} className="px-4 py-4 text-center">
                             {isConfirming ? (
@@ -733,7 +708,7 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
     setLoadingSuggestions(true);
     try {
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-      const res = await fetch(`${baseUrl}api/designations/skills`, {
+      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/designations/skills`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ designation: title })
@@ -890,7 +865,7 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
             />
           </FormSection>
 
-          {localAssignments.length > 0 && (
+          {/* {localAssignments.length > 0 && (
             <FormSection title="Active Project Assignments">
               <div className="space-y-3 pt-1">
                 {localAssignments.map((la, idx) => (
@@ -914,7 +889,7 @@ const EditMemberDrawer = ({ members, projects, assignments, onClose, qc }: { mem
                 ))}
               </div>
             </FormSection>
-          )}
+          )} */}
         </div>
       </div>
 
