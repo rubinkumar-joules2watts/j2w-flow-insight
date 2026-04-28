@@ -558,9 +558,44 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
       alert(`Error deleting: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   };  // --- DATE-FNS TIMELINE LOGIC ---
-  const calendarMonths = data.calendar_months || [];
   const backendAllWeeks = data.all_weeks || {};
   const allMilestones = projectMilestones || [];
+  const hasAnyActualsGlobal = allMilestones.some(m => !!m.actual_start);
+
+  // Extend calendar_months to cover all milestone planned/actual end dates.
+  // The backend only generates months for milestones with actual data; milestones
+  // that only have planned dates in the future would otherwise fall outside the grid.
+  const calendarMonths = (() => {
+    const months = [...(data.calendar_months || [])];
+    if (months.length === 0) return months;
+    const lastMonth = months[months.length - 1];
+    const lastCalendarEnd = new Date(lastMonth.year, lastMonth.month, 0);
+    const allEndDates = allMilestones
+      .flatMap(m => [m.planned_end, m.actual_end_eta].filter(Boolean) as string[])
+      .map(d => parseISO(d));
+    if (allEndDates.length === 0) return months;
+    const maxEndDate = new Date(Math.max(...allEndDates.map(d => d.getTime())));
+    if (maxEndDate <= lastCalendarEnd) return months;
+    let extMonth = lastMonth.month + 1;
+    let extYear = lastMonth.year;
+    while (true) {
+      if (extMonth > 12) { extMonth = 1; extYear++; }
+      const monthStart = new Date(extYear, extMonth - 1, 1);
+      if (monthStart > maxEndDate) break;
+      const firstDayOfWeek = monthStart.getDay();
+      const daysInMonth = new Date(extYear, extMonth, 0).getDate();
+      const weeksCount = Math.ceil((firstDayOfWeek + daysInMonth) / 7);
+      months.push({
+        month: extMonth,
+        year: extYear,
+        month_name: format(monthStart, "MMM"),
+        month_year: format(monthStart, "MMM yyyy"),
+        weeks_count: weeksCount,
+      });
+      extMonth++;
+    }
+    return months;
+  })();
 
   // Generate Global Grid from calendar_months
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string; weeks_count: number }> = {};
@@ -627,6 +662,25 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
     };
   });
 
+  // Fill in week entries for extended months not covered by backend data.
+  let _extGridIdx = 0;
+  for (const m of calendarMonths) {
+    for (let w = 0; w < m.weeks_count; w++) {
+      if (!processedAllWeeks[String(_extGridIdx)]) {
+        const monthStart = new Date(m.year, m.month - 1, 1);
+        const startDayOfWeek = monthStart.getDay();
+        const dayOffset = w === 0 ? 0 : w * 7 - startDayOfWeek;
+        const weekStart = new Date(m.year, m.month - 1, 1 + Math.max(0, dayOffset));
+        const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+        processedAllWeeks[String(_extGridIdx)] = {
+          start: format(weekStart, "yyyy-MM-dd"),
+          label: `${format(weekStart, "MMM d")}-${format(weekEnd, "d")}, ${format(weekEnd, "yyyy")}`,
+        };
+      }
+      _extGridIdx++;
+    }
+  }
+
   // Practice weeks directly tell us which grid column they belong to.
   const getGridIdxFromBackendWeek = (backendWeekNum: number) => {
     return backendWeekNum;
@@ -636,14 +690,20 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
   const gridMatrix: Record<string, Record<number, any>> = {};
 
   ["practice", "signoff", "invoice"].forEach(type => {
-    const rows = data[type as keyof MilestoneHealthData] || [];
+    const rows = (data[type as keyof MilestoneHealthData] || []) as MilestoneHealthPhase[];
     rows.forEach((hm: any) => {
       const key = `${hm.milestone_code}-${type}`;
       if (!gridMatrix[key]) gridMatrix[key] = {};
 
+      // Calculate project start offset once if possible
+      const firstWeekDate = data.all_weeks?.["0"]?.start;
+      const projectStartGridIdx = firstWeekDate ? getGridIdxFromDate(firstWeekDate) : 0;
+
       if (hm.weeks) {
         hm.weeks.forEach((w: any) => {
-          const gIdx = getGridIdxFromBackendWeek(w.week_number);
+          // Use the backend week_number as an offset from the project's start grid index
+          // This ensures continuity even across month boundaries that create 'short weeks'
+          const gIdx = projectStartGridIdx + w.week_number;
           if (gIdx >= 0) gridMatrix[key][gIdx] = w;
         });
       }
@@ -789,6 +849,25 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                               status: "Pending"
                             };
 
+                            // For Practice phase, we use a hybrid approach with strict table boundaries:
+                            if (phase.type === "practice") {
+                              const start = hasAnyActualsGlobal ? m.actual_start : m.planned_start;
+                              const end = hasAnyActualsGlobal ? m.actual_end_eta : m.planned_end;
+
+                              if (start && end) {
+                                const startIdx = getGridIdxFromDate(start);
+                                const endIdx = getGridIdxFromDate(end);
+                                const isInRange = weekIdx >= startIdx && weekIdx <= endIdx;
+
+                                if (!isInRange) {
+                                  // STRICT BOUNDARY: If not in date range, ignore backend data
+                                  week = null;
+                                }
+                                // If in range but no backend data, keep week as null so the cell
+                                // renders as an empty/clickable placeholder rather than fake green.
+                              }
+                            }
+
                             if (week) {
                               return (
                                 <WeekBlockCell
@@ -797,7 +876,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                                   type={phase.type}
                                   allWeeks={processedAllWeeks}
                                   milestone={m.milestone_code || ""}
-                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, weekIdx, week.week_label, week.date, false) : undefined}
+                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, weekIdx, week.week_label || weekLabel, week.date, false) : undefined}
                                 />
                               );
                             } else {

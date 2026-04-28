@@ -180,12 +180,12 @@ const Projects = () => {
 
   const getUpdateAttachments = (update: ProjectUpdate): ProjectDocument[] => {
     let attachments: ProjectDocument[] = [];
-    
+
     // Helper to extract multiple attachments from any object (Update or Document record)
     const extractFromObj = (obj: any, baseId: string): ProjectDocument[] => {
       const found: ProjectDocument[] = [];
       const keys = Object.keys(obj);
-      
+
       // Look for keys matching path, path2, file_path, file_path2, etc.
       const pathKeys = keys.filter(k => k.match(/^(file_)?path\d*$/)).sort((a, b) => {
         const numA = parseInt(a.match(/\d+$/)?.[0] || '1');
@@ -231,7 +231,7 @@ const Projects = () => {
       if (d.project_id !== update.project_id) return;
 
       const docsFromRecord = extractFromObj(d, `doc-${d.id}`);
-      
+
       // A: Explicit update_id match (Highest priority)
       const isExplicitMatch = d.update_id === update.id;
 
@@ -242,7 +242,7 @@ const Projects = () => {
       const isTimeClose = Math.abs(updateTime - docTime) < 60000;
 
       const hasPathMatch = docsFromRecord.some(newDoc => attachments.some(a => a.path === newDoc.path));
-      
+
       const isLinked = isExplicitMatch || (isTimeClose && hasPathMatch);
 
       if (isLinked) {
@@ -253,7 +253,7 @@ const Projects = () => {
         });
       }
     });
-    
+
     return attachments;
   };
   const [projectStatusFilter, setProjectStatusFilter] = useState("all");
@@ -387,6 +387,20 @@ const Projects = () => {
     }, {} as Record<string, unknown>);
 
     await writeAuditLog("milestones", id, "UPDATE", oldValues, next, changedFields);
+
+    // Trigger health regeneration if status or dates changed
+    if (["status", "actual_start", "actual_end_eta"].includes(field)) {
+      try {
+        await fetch(apiUrl(`api/milestones/${id}/health/practice`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: current.status || "On Track" })
+        });
+      } catch (err) {
+        console.error("Failed to trigger health regeneration:", err);
+      }
+    }
+
     qc.invalidateQueries({ queryKey: ["milestones"] });
     if (selectedId) {
       qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
@@ -2188,7 +2202,7 @@ const Projects = () => {
                 <div className="flex items-center gap-3">
                   <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${viewingUpdateRecord.category === "Sales" ? "bg-emerald-100 text-emerald-700" :
                     viewingUpdateRecord.category === "Cadence" ? "bg-orange-100 text-orange-700" :
-                    "bg-blue-100 text-blue-700"
+                      "bg-blue-100 text-blue-700"
                     }`}>
                     {viewingUpdateRecord.category || "Internal"}
                   </div>
@@ -2211,7 +2225,7 @@ const Projects = () => {
 
               <div className="bg-gray-50/50 rounded-xl border border-gray-100 p-5">
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">Content</p>
-                <div 
+                <div
                   className="prose prose-sm max-w-none text-sm text-gray-800 leading-relaxed max-h-[500px] min-h-[300px] overflow-y-auto pr-2 custom-scrollbar font-medium j2w-rich-text"
                   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(viewingUpdateRecord.content) }}
                 />
@@ -2328,15 +2342,15 @@ const Projects = () => {
                   <p className="mt-2 text-xs text-gray-500">This action will delete all associated milestones, assignments, and documents. This cannot be undone.</p>
                 </div>
                 <div className="flex gap-3">
-                  <button 
-                    onClick={() => setConfirmDeleteProject(null)} 
+                  <button
+                    onClick={() => setConfirmDeleteProject(null)}
                     disabled={isDeletingProject}
                     className="flex-1 rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-bold text-gray-900 hover:bg-gray-200 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
-                  <button 
-                    onClick={() => handleDeleteProject(confirmDeleteProject)} 
+                  <button
+                    onClick={() => handleDeleteProject(confirmDeleteProject)}
                     disabled={isDeletingProject}
                     className="flex-1 rounded-lg bg-red-500 px-4 py-2 text-sm font-bold text-white hover:bg-red-600 transition-colors disabled:opacity-70 flex items-center justify-center gap-2"
                   >
@@ -2420,7 +2434,7 @@ const Projects = () => {
                 <div className="mb-4">
                   <h3 className="text-lg font-bold text-gray-900">Delete Update</h3>
                   <p className="mt-2 text-sm text-gray-700">Are you sure you want to delete this update from <span className="font-semibold">{formatDateReadable(update.activity_date)}</span>?</p>
-                  <div 
+                  <div
                     className="mt-2 text-xs text-gray-500 line-clamp-3 italic prose prose-sm prose-p:my-0 prose-headings:my-0 j2w-rich-text"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(update.content) }}
                   />
