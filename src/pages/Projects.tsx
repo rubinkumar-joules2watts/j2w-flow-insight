@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import DOMPurify from 'dompurify';
 
 const formatDateReadable = (value: string | null | undefined) => {
@@ -122,14 +123,16 @@ const Projects = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { data: clients } = useClients();
-  const { data: projects } = useProjects();
-  const { data: milestones } = useMilestones();
+  const { data: clients, isLoading: clientsLoading } = useClients();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: milestones, isLoading: milestonesLoading } = useMilestones();
   const { data: members, isLoading: membersLoading, isFetching: membersFetching } = useTeamMembers();
   const { data: assignments, isLoading: assignmentsLoading, isFetching: assignmentsFetching } = useAssignments();
-  const { data: auditLog } = useAuditLog();
-  const { data: allUpdates = [] } = useProjectUpdates();
-  const { data: projDocs = [] } = useProjectDocuments();
+  const { data: auditLog, isLoading: auditLoading } = useAuditLog();
+  const { data: allUpdates = [], isLoading: updatesLoading } = useProjectUpdates();
+  const { data: projDocs = [], isLoading: docsLoading } = useProjectDocuments();
+  
+  const isProjectLoading = clientsLoading || projectsLoading || milestonesLoading || membersLoading || assignmentsLoading || auditLoading || updatesLoading || docsLoading;
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
@@ -1072,26 +1075,34 @@ const Projects = () => {
 
         {/* Project Selector */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
-            {filteredProjects.map((p) => {
-              const cl = clients?.find((c) => c.id === p.client_id);
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => navigate(`/projects?id=${p.id}`)}
-                  className={`shrink-0 flex items-center gap-2 rounded-full border px-4 py-2 transition-all ${p.id === selectedId
-                    ? "border-primary bg-primary/10 text-primary shadow-sm"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-white"
-                    }`}
-                >
-                  <span className="text-sm font-bold tracking-tight">{cl?.name} · {p.name}</span>
-                  <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${p.id === selectedId ? "bg-primary text-white shadow-sm" : "bg-gray-200 text-gray-600"}`}>
-                    {milestones?.filter(m => m.project_id === p.id).length || 0}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {isProjectLoading ? (
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-32 rounded-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
+              {filteredProjects.map((p) => {
+                const cl = clients?.find((c) => c.id === p.client_id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => navigate(`/projects?id=${p.id}`)}
+                    className={`shrink-0 flex items-center gap-2 rounded-full border px-4 py-2 transition-all ${p.id === selectedId
+                      ? "border-primary bg-primary/10 text-primary shadow-sm"
+                      : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-white"
+                      }`}
+                  >
+                    <span className="text-sm font-bold tracking-tight">{cl?.name} · {p.name}</span>
+                    <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${p.id === selectedId ? "bg-primary text-white shadow-sm" : "bg-gray-200 text-gray-600"}`}>
+                      {milestones?.filter(m => m.project_id === p.id).length || 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="relative shrink-0">
             <button
               onClick={() => setShowAddDropdown(!showAddDropdown)}
@@ -1129,7 +1140,16 @@ const Projects = () => {
           </div>
         </div>
 
-        {project && (
+        {isProjectLoading ? (
+          <div className="space-y-4 pt-2">
+            <Skeleton className="h-32 w-full rounded-lg" />
+            <Skeleton className="h-96 w-full rounded-lg" />
+            <div className="grid grid-cols-[7fr_5fr] gap-4">
+              <Skeleton className="h-[500px] w-full rounded-lg" />
+              <Skeleton className="h-[500px] w-full rounded-lg" />
+            </div>
+          </div>
+        ) : project && (
           <>
             {/* Project Header - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-3">

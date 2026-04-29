@@ -5,7 +5,7 @@ import FilterSelect from "@/components/common/FilterSelect";
 import { useClients, useProjects, useMilestones, useTeamMembers, useAssignments } from "@/hooks/useData";
 import { api, apiUrl } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend,
@@ -22,6 +22,7 @@ import onTrackAnim from "../../public/json/boy-watching-business-performance.jso
 import atRiskAnim from "../../public/json/business-persons-bickering-with-each-other.json";
 import blockedAnim from "../../public/json/office-drawer.json";
 import completedAnim from "../../public/json/successful-business-agreement.json";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface DashboardCounters {
   active_projects: number;
@@ -53,43 +54,48 @@ const statusBadge = (s: string | null) => {
 
 
 const Overview = () => {
-  const { data: clients } = useClients();
-  const { data: projects } = useProjects();
-  const { data: milestones } = useMilestones();
-  const { data: members } = useTeamMembers();
-  const { data: assignments } = useAssignments();
+  const { data: clients, isLoading: clientsLoading } = useClients();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: milestones, isLoading: milestonesLoading } = useMilestones();
+  const { data: members, isLoading: membersLoading } = useTeamMembers();
+  const { data: assignments, isLoading: assignmentsLoading } = useAssignments();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  
+  const { data: countersData, isLoading: countersLoading } = useQuery({
+    queryKey: ["dashboard_counters"],
+    queryFn: async () => {
+      const response = await fetch(apiUrl("/api/dashboard/counters"), {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) throw new Error("Failed to fetch dashboard counters");
+      return (await response.json()) as DashboardCounters;
+    }
+  });
 
-  const [clientFilter, setClientFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [projectSearch, setProjectSearch] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [counters, setCounters] = useState<DashboardCounters>({
+  const counters = countersData || {
     active_projects: 0,
     on_track_projects: 0,
     at_risk_projects: 0,
     blocked_projects: 0,
     completed_projects: 0,
-  });
-
-  const fetchCounters = async () => {
-    try {
-      const response = await fetch(apiUrl("/api/dashboard/counters"), {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (response.ok) setCounters(await response.json());
-    } catch (error) {
-      console.error("Failed to fetch dashboard counters:", error);
-    }
   };
 
-  useEffect(() => { fetchCounters(); }, []);
+  const isLoading = clientsLoading || projectsLoading || milestonesLoading || membersLoading || assignmentsLoading || countersLoading;
+
+  const [clientFilter, setClientFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+
 
   useEffect(() => {
     const channel = api.channel("overview-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => qc.invalidateQueries({ queryKey: ["projects"] }))
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => {
+        qc.invalidateQueries({ queryKey: ["projects"] });
+        qc.invalidateQueries({ queryKey: ["dashboard_counters"] });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "milestones" }, () => qc.invalidateQueries({ queryKey: ["milestones"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "team_members" }, () => qc.invalidateQueries({ queryKey: ["team_members"] }))
       .on("postgres_changes", { event: "*", schema: "public", table: "project_assignments" }, () => qc.invalidateQueries({ queryKey: ["project_assignments"] }))
@@ -308,31 +314,37 @@ const Overview = () => {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-5 gap-4">
-          {kpiCards.map((kpi) => {
-            const isActive = statusFilter === kpi.statusValue;
-            return (
-              <div
-                key={kpi.label}
-                onClick={() => setStatusFilter(isActive ? "all" : kpi.statusValue)}
-                className={`relative flex items-center rounded-xl border p-5 shadow-sm cursor-pointer transition-all hover:shadow-md overflow-hidden ${kpi.cardBg} ${isActive ? "ring-2 ring-blue-500 border-blue-300" : "border-gray-200 hover:border-blue-200"}`}
-              >
-                <div className="flex-1 min-w-0 z-10">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">{kpi.label}</p>
-                  <p className="text-4xl font-black text-gray-900 leading-tight">{kpi.value}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{kpi.pct}% of total</p>
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-xl" />
+            ))
+          ) : (
+            kpiCards.map((kpi) => {
+              const isActive = statusFilter === kpi.statusValue;
+              return (
+                <div
+                  key={kpi.label}
+                  onClick={() => setStatusFilter(isActive ? "all" : kpi.statusValue)}
+                  className={`relative flex items-center rounded-xl border p-5 shadow-sm cursor-pointer transition-all hover:shadow-md overflow-hidden ${kpi.cardBg} ${isActive ? "ring-2 ring-blue-500 border-blue-300" : "border-gray-200 hover:border-blue-200"}`}
+                >
+                  <div className="flex-1 min-w-0 z-10">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">{kpi.label}</p>
+                    <p className="text-4xl font-black text-gray-900 leading-tight">{kpi.value}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{kpi.pct}% of total</p>
+                  </div>
+                  <div className="absolute right-0 top-0 bottom-0 w-2/5 opacity-90">
+                    {kpi.lottie ? (
+                      <Lottie animationData={kpi.lottie} loop={true} style={{ height: '100%', width: '100%' }} />
+                    ) : (
+                      <div className={`flex h-full items-center justify-center ${kpi.iconBg}`}>
+                        <kpi.icon size={48} className={kpi.iconColor} />
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="absolute right-0 top-0 bottom-0 w-2/5 opacity-90">
-                  {kpi.lottie ? (
-                    <Lottie animationData={kpi.lottie} loop={true} style={{ height: '100%', width: '100%' }} />
-                  ) : (
-                    <div className={`flex h-full items-center justify-center ${kpi.iconBg}`}>
-                      <kpi.icon size={48} className={kpi.iconColor} />
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
 
@@ -352,45 +364,54 @@ const Overview = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedProjects.map((p, idx) => {
-                  const client = clients?.find((c) => c.id === p.client_id);
-                  const signoff = getSignoffProgress(p.id);
-                  const completion = getProjectCompletion(p.id);
-                  const pMs = milestones?.filter((m) => m.project_id === p.id) || [];
-                  const completedInvoices = pMs.filter((m) => m.invoice_status === "Done").length;
-                  return (
-                    <tr
-                      key={p.id}
-                      onClick={() => navigate(`/projects?id=${p.id}`)}
-                      className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-blue-50 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
-                    >
-                      <td className="px-5 py-3.5 text-gray-600 font-medium whitespace-nowrap">{client?.name || "—"}</td>
-                      <td className="px-5 py-3.5 font-semibold text-gray-900 whitespace-nowrap">{p.name}</td>
-                      <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{p.service_type || "—"}</td>
-                      <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">{p.delivery_manager || "—"}</td>
-                      <td className="px-5 py-3.5 text-gray-500 min-w-[200px] max-w-[280px] truncate">{getProjectResources(p.id)}</td>
-                      <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className={statusBadge(p.status)}>{p.status || "—"}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">
-                        <span className="font-semibold text-gray-900">{signoff.signed}</span>
-                        <span className="text-gray-400">/{signoff.total} signed off</span>
-                      </td>
-                      <td className="px-5 py-3.5 min-w-[140px]">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-gray-900">{completedInvoices}</span>
-                          <span className="text-gray-400">/{pMs.length || 0} completed</span>
-                        </div>
-                      </td>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="border-b border-gray-100 bg-white">
+                      {Array.from({ length: 8 }).map((_, j) => (
+                        <td key={j} className="px-5 py-4"><Skeleton className="h-4 w-full" /></td>
+                      ))}
                     </tr>
-                  );
-                })}
-                {paginatedProjects.length === 0 && (
+                  ))
+                ) : paginatedProjects.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-5 py-12 text-center text-sm text-gray-400">
                       No projects match the current filters.
                     </td>
                   </tr>
+                ) : (
+                  paginatedProjects.map((p, idx) => {
+                    const client = clients?.find((c) => c.id === p.client_id);
+                    const signoff = getSignoffProgress(p.id);
+                    const completion = getProjectCompletion(p.id);
+                    const pMs = milestones?.filter((m) => m.project_id === p.id) || [];
+                    const completedInvoices = pMs.filter((m) => m.invoice_status === "Done").length;
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => navigate(`/projects?id=${p.id}`)}
+                        className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-blue-50 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                      >
+                        <td className="px-5 py-3.5 text-gray-600 font-medium whitespace-nowrap">{client?.name || "—"}</td>
+                        <td className="px-5 py-3.5 font-semibold text-gray-900 whitespace-nowrap">{p.name}</td>
+                        <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{p.service_type || "—"}</td>
+                        <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">{p.delivery_manager || "—"}</td>
+                        <td className="px-5 py-3.5 text-gray-500 min-w-[200px] max-w-[280px] truncate">{getProjectResources(p.id)}</td>
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          <span className={statusBadge(p.status)}>{p.status || "—"}</span>
+                        </td>
+                        <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">
+                          <span className="font-semibold text-gray-900">{signoff.signed}</span>
+                          <span className="text-gray-400">/{signoff.total} signed off</span>
+                        </td>
+                        <td className="px-5 py-3.5 min-w-[140px]">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900">{completedInvoices}</span>
+                            <span className="text-gray-400">/{pMs.length || 0} completed</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -435,39 +456,52 @@ const Overview = () => {
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
             <h3 className="text-sm font-bold text-gray-900 mb-4">Projects by Status</h3>
             <div className="flex-1 flex flex-col">
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={58}
-                    outerRadius={85}
-                    dataKey="value"
-                    labelLine={false}
-                    label={<CustomDonutLabel />}
-                    strokeWidth={2}
-                    stroke="#fff"
-                  >
-                    {pieData.map((entry, i) => (
-                      <Cell key={i} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-3 space-y-1.5">
-                {pieData.map((d) => (
-                  <div key={d.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: d.color }} />
-                      <span className="text-gray-600">{d.name}</span>
-                    </div>
-                    <span className="font-semibold text-gray-900">
-                      {d.value} <span className="text-gray-400 font-normal">({totalProjects ? Math.round((d.value / totalProjects) * 100) : 0}%)</span>
-                    </span>
+              {isLoading ? (
+                <div className="space-y-4 flex-1 flex flex-col justify-center px-4">
+                  <Skeleton className="h-[180px] w-[180px] rounded-full mx-auto" />
+                  <div className="space-y-3 mt-4">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-4 w-4/6" />
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={58}
+                        outerRadius={85}
+                        dataKey="value"
+                        labelLine={false}
+                        label={<CustomDonutLabel />}
+                        strokeWidth={2}
+                        stroke="#fff"
+                      >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="mt-3 space-y-1.5">
+                    {pieData.map((d) => (
+                      <div key={d.name} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="h-2.5 w-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: d.color }} />
+                          <span className="text-gray-600">{d.name}</span>
+                        </div>
+                        <span className="font-semibold text-gray-900">
+                          {d.value} <span className="text-gray-400 font-normal">({totalProjects ? Math.round((d.value / totalProjects) * 100) : 0}%)</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
             <button
               onClick={() => navigate("/projects")}
@@ -482,32 +516,43 @@ const Overview = () => {
             <h3 className="text-sm font-bold text-gray-900 mb-1">Milestone Completion by Client</h3>
             <p className="text-xs text-gray-400 mb-3">% of milestones completed</p>
             <div className="flex-1">
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 80, right: 24, top: 4, bottom: 4 }}>
-                  <XAxis
-                    type="number"
-                    domain={[0, 100]}
-                    tick={{ fontSize: 10, fill: "#9ca3af" }}
-                    tickFormatter={(v) => `${v}`}
-                    label={{ value: "% Completion", position: "insideBottom", offset: -2, fontSize: 10, fill: "#9ca3af" }}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tick={{ fontSize: 11, fill: "#374151", fontWeight: 500 }}
-                    width={78}
-                  />
-                  <Tooltip
-                    contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, padding: "8px 12px" }}
-                    formatter={(v: number, _: string, p: any) => [`${p.payload.done}/${p.payload.total} milestones (${v}%)`, "Completion"]}
-                  />
-                  <Bar dataKey="pct" radius={[0, 6, 6, 0]} maxBarSize={18}>
-                    {clientCompletionData.map((_, i) => (
-                      <Cell key={i} fill={`hsl(${217 + i * 12}, 80%, ${52 + (i % 3) * 4}%)`} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {isLoading ? (
+                <div className="space-y-4 px-2 py-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4">
+                      <Skeleton className="h-4 w-1/4" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={clientCompletionData} layout="vertical" margin={{ left: 80, right: 24, top: 4, bottom: 4 }}>
+                    <XAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 10, fill: "#9ca3af" }}
+                      tickFormatter={(v) => `${v}`}
+                      label={{ value: "% Completion", position: "insideBottom", offset: -2, fontSize: 10, fill: "#9ca3af" }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: "#374151", fontWeight: 500 }}
+                      width={78}
+                    />
+                    <Tooltip
+                      contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, fontSize: 12, padding: "8px 12px" }}
+                      formatter={(v: number, _: string, p: any) => [`${p.payload.done}/${p.payload.total} milestones (${v}%)`, "Completion"]}
+                    />
+                    <Bar dataKey="pct" radius={[0, 6, 6, 0]} maxBarSize={18}>
+                      {clientCompletionData.map((_, i) => (
+                        <Cell key={i} fill={`hsl(${217 + i * 12}, 80%, ${52 + (i % 3) * 4}%)`} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -515,7 +560,17 @@ const Overview = () => {
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex flex-col">
             <h3 className="text-sm font-bold text-gray-900 mb-4">Recent Activity</h3>
             <div className="flex-1 space-y-3">
-              {recentActivity.length === 0 ? (
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-6 w-6 rounded-full" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-2.5 w-1/2" />
+                    </div>
+                  </div>
+                ))
+              ) : recentActivity.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-8">No recent activity</p>
               ) : (
                 recentActivity.map((item) => (

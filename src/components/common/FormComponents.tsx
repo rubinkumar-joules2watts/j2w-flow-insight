@@ -36,6 +36,7 @@ export const FormInput = ({
   label,
   value,
   onChange,
+  onBlur,
   type = "text",
   placeholder,
   required = false,
@@ -44,6 +45,7 @@ export const FormInput = ({
   label: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   type?: string;
   placeholder?: string;
   required?: boolean;
@@ -58,6 +60,7 @@ export const FormInput = ({
       type={type}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       disabled={disabled}
       className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 outline-none transition-all hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -70,6 +73,7 @@ export const FormSelect = ({
   label,
   value,
   onChange,
+  onBlur,
   options,
   required = false,
   disabled = false,
@@ -77,6 +81,7 @@ export const FormSelect = ({
   label: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   options: string[];
   required?: boolean;
   disabled?: boolean;
@@ -105,6 +110,7 @@ export const FormSelect = ({
           type="button"
           disabled={disabled}
           onClick={() => !disabled && setIsOpen(!isOpen)}
+          onBlur={onBlur}
           className={`w-full flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed ${
             isOpen 
               ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)] text-blue-600" 
