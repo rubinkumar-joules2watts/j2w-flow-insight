@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { X, Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Heading3, Table as TableIcon } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { X, Bold, Italic, Underline as UnderlineIcon, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Heading3, Table as TableIcon, ChevronDown, Check } from "lucide-react";
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
@@ -80,26 +80,76 @@ export const FormSelect = ({
   options: string[];
   required?: boolean;
   disabled?: boolean;
-}) => (
-  <div>
-    <label className="mb-2 block text-xs font-semibold text-gray-700 uppercase tracking-wide">
-      {label}
-      {required && <span className="text-red-500 ml-1">*</span>}
-    </label>
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      className="w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 outline-none transition-all hover:border-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      {options.map((opt) => (
-        <option key={opt} value={opt}>
-          {opt}
-        </option>
-      ))}
-    </select>
-  </div>
-);
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-1" ref={dropdownRef}>
+      <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide">
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          className={`w-full flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-xs font-medium transition-all duration-200 focus:outline-none focus:ring-1 focus:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed ${
+            isOpen 
+              ? "border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)] text-blue-600" 
+              : "border-gray-300 text-gray-900 hover:border-gray-400 hover:shadow-sm"
+          }`}
+        >
+          <span className={`truncate pr-2 ${!value ? "text-gray-400 font-normal" : ""}`}>
+            {value || "Select..."}
+          </span>
+          <ChevronDown
+            size={14}
+            className={`flex-shrink-0 text-gray-500 transition-transform duration-300 ${isOpen ? "rotate-180 text-blue-500" : ""}`}
+          />
+        </button>
+
+        {isOpen && !disabled && (
+          <div className="absolute z-50 mt-1.5 w-full animate-in fade-in zoom-in-95 slide-in-from-top-2 origin-top rounded-xl border border-gray-200/50 bg-white/95 backdrop-blur-xl p-1.5 shadow-xl shadow-blue-900/5 ring-1 ring-black/5">
+            <div className="max-h-60 overflow-y-auto custom-scrollbar pr-1 space-y-0.5">
+              {options.map((opt) => {
+                const isSelected = value === opt;
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => {
+                      onChange(opt);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all text-left ${
+                      isSelected
+                        ? "bg-blue-50/80 text-blue-700"
+                        : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                  >
+                    <span className="truncate pr-2">{opt}</span>
+                    {isSelected && <Check size={14} className="flex-shrink-0 text-blue-600" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 /* ===== Form Range ===== */
 export const FormRange = ({
@@ -462,7 +512,7 @@ export const FormRichTextEditor = ({
       return;
     }
 
-    editor.commands.setContent(value || '', false);
+    editor.commands.setContent(value || '', { emitUpdate: false });
   }, [value, editor]);
 
   return (
