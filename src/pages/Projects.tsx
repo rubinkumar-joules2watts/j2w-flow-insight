@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import DOMPurify from 'dompurify';
 
 const formatDateReadable = (value: string | null | undefined) => {
@@ -122,14 +123,16 @@ const Projects = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { data: clients } = useClients();
-  const { data: projects } = useProjects();
-  const { data: milestones } = useMilestones();
+  const { data: clients, isLoading: clientsLoading } = useClients();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: milestones, isLoading: milestonesLoading } = useMilestones();
   const { data: members, isLoading: membersLoading, isFetching: membersFetching } = useTeamMembers();
   const { data: assignments, isLoading: assignmentsLoading, isFetching: assignmentsFetching } = useAssignments();
-  const { data: auditLog } = useAuditLog();
-  const { data: allUpdates = [] } = useProjectUpdates();
-  const { data: projDocs = [] } = useProjectDocuments();
+  const { data: auditLog, isLoading: auditLoading } = useAuditLog();
+  const { data: allUpdates = [], isLoading: updatesLoading } = useProjectUpdates();
+  const { data: projDocs = [], isLoading: docsLoading } = useProjectDocuments();
+  
+  const isProjectLoading = clientsLoading || projectsLoading || milestonesLoading || membersLoading || assignmentsLoading || auditLoading || updatesLoading || docsLoading;
 
   const selectedId = searchParams.get("id") || projects?.[0]?.id || "";
   const project = projects?.find((p) => p.id === selectedId);
@@ -377,8 +380,22 @@ const Projects = () => {
       }
     }
 
+    // Optimistic Update
+    qc.setQueryData(["milestones"], (old: any) => {
+      if (!old) return old;
+      return old.map((m: any) => m.id === id ? { ...m, ...next } : m);
+    });
+
     const { error } = await api.from("milestones").update(next as any).eq("id", id);
-    if (error) { toast.error("Failed to update"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["milestones"], (old: any) => {
+        if (!old) return old;
+        return old.map((m: any) => m.id === id ? { ...m, ...current } : m);
+      });
+      toast.error("Failed to update"); 
+      return; 
+    }
 
     const changedFields = Object.keys(next);
     const oldValues = changedFields.reduce((acc, key) => {
@@ -400,8 +417,23 @@ const Projects = () => {
     if (!current) return;
 
     const next: Record<string, unknown> = { [field]: value };
+    
+    // Optimistic Update
+    qc.setQueryData(["project_updates"], (old: any) => {
+      if (!old) return old;
+      return old.map((u: any) => u.id === id ? { ...u, ...next } : u);
+    });
+
     const { error } = await api.from("project_updates").update(next as any).eq("id", id);
-    if (error) { toast.error("Failed to update timeline"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["project_updates"], (old: any) => {
+        if (!old) return old;
+        return old.map((u: any) => u.id === id ? { ...u, ...current } : u);
+      });
+      toast.error("Failed to update timeline"); 
+      return; 
+    }
 
     const changedFields = Object.keys(next);
     const oldValues = changedFields.reduce((acc, key) => {
@@ -462,6 +494,17 @@ const Projects = () => {
       }
     }
 
+    // Optimistic Update
+    qc.setQueryData(["milestones"], (old: any) => {
+      if (!old) return old;
+      return old.map((m: any) => {
+        if (m.id === actualId) {
+           return { ...m, ...payload };
+        }
+        return m;
+      });
+    });
+
     try {
       const response = await fetch(`https://j2w-tracker-backend.onrender.com/api/milestones/${actualId}`, {
         method: "PUT",
@@ -469,7 +512,9 @@ const Projects = () => {
         body: JSON.stringify(payload)
       });
       console.log("THE ACTUAL ID", actualId);
-      if (!response.ok) throw new Error("API error");
+      if (!response.ok) {
+        throw new Error("API error");
+      }
       qc.invalidateQueries({ queryKey: ["milestones"] });
       qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
       toast.success(`✓ Updated ${field.replace(/_/g, " ")} · ${new Date().toLocaleTimeString()}`);
@@ -480,8 +525,23 @@ const Projects = () => {
 
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
+    
+    // Optimistic Update
+    qc.setQueryData(["projects"], (old: any) => {
+      if (!old) return old;
+      return old.map((p: any) => p.id === project.id ? { ...p, [field]: value } : p);
+    });
+
     const { error } = await api.from("projects").update({ [field]: value } as any).eq("id", project.id);
-    if (error) { toast.error("Failed to update"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["projects"], (old: any) => {
+        if (!old) return old;
+        return old.map((p: any) => p.id === project.id ? { ...p, [field]: oldVal } : p);
+      });
+      toast.error("Failed to update"); 
+      return; 
+    }
     await writeAuditLog("projects", project.id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
     qc.invalidateQueries({ queryKey: ["projects"] });
     toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
@@ -490,6 +550,14 @@ const Projects = () => {
 
   const updateProjectStatusViaAPI = useCallback(async (value: string) => {
     if (!project) return;
+    const oldStatus = project.status;
+    
+    // Optimistic Update
+    qc.setQueryData(["projects"], (old: any) => {
+      if (!old) return old;
+      return old.map((p: any) => p.id === project.id ? { ...p, status: value } : p);
+    });
+
     try {
       const response = await fetch(apiUrl(`/api/projects/${project.id}`), {
         method: "PUT",
@@ -501,14 +569,21 @@ const Projects = () => {
       toast.success(`✓ Project Status updated to ${value} · ${new Date().toLocaleTimeString()}`);
       showSaved("proj-status");
     } catch (err) {
+      // Rollback
+      qc.setQueryData(["projects"], (old: any) => {
+        if (!old) return old;
+        return old.map((p: any) => p.id === project.id ? { ...p, status: oldStatus } : p);
+      });
       toast.error("Failed to update project status");
     }
   }, [qc, project]);
 
   // Add project form
   const [newProject, setNewProject] = useState({ clientName: "", name: "", code: "", serviceType: "Outcome", revenueModel: "Milestone", deliveryManager: "", clientSpoc: "", handledBy: "", memberIds: [] as string[] });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddProject = async () => {
+    setIsSubmitting(true);
     let clientId: string;
     const existing = clients?.find((c) => c.name.toLowerCase() === newProject.clientName.toLowerCase());
     if (existing) { clientId = existing.id; }
@@ -535,10 +610,12 @@ const Projects = () => {
     qc.invalidateQueries({ queryKey: ["clients"] });
     toast.success(`✓ Project created · ${new Date().toLocaleTimeString()}`);
     setShowAddProject(false);
+    setIsSubmitting(false);
     navigate(`/projects?id=${proj.id}`);
   };
 
   const handleWizardSave = async (wizardData: any) => {
+    setIsSubmitting(true);
     try {
       // 1. Find or create client
       let clientId: string;
@@ -625,21 +702,25 @@ const Projects = () => {
       navigate(`/projects?id=${proj.id}`);
     } catch (e) {
       toast.error("Unexpected error creating project");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const [newMs, setNewMs] = useState({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
   const handleAddMilestone = async () => {
+    setIsSubmitting(true);
     const { data, error } = await api.from("milestones").insert({
       project_id: selectedId, milestone_code: newMs.code, description: newMs.description,
       planned_start: newMs.plannedStart || null, planned_end: newMs.plannedEnd || null,
       deliverables: newMs.deliverables || null,
     }).select().single();
-    if (error) { toast.error("Failed to add milestone"); return; }
+    if (error) { toast.error("Failed to add milestone"); setIsSubmitting(false); return; }
     await writeAuditLog("milestones", data.id, "INSERT", null, data);
     qc.invalidateQueries({ queryKey: ["milestones"] });
     toast.success(`✓ Milestone added · ${new Date().toLocaleTimeString()}`);
     setShowAddMilestone(false);
+    setIsSubmitting(false);
     setNewMs({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
   };
 
@@ -1072,26 +1153,34 @@ const Projects = () => {
 
         {/* Project Selector */}
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
-            {filteredProjects.map((p) => {
-              const cl = clients?.find((c) => c.id === p.client_id);
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => navigate(`/projects?id=${p.id}`)}
-                  className={`shrink-0 flex items-center gap-2 rounded-full border px-4 py-2 transition-all ${p.id === selectedId
-                    ? "border-primary bg-primary/10 text-primary shadow-sm"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-white"
-                    }`}
-                >
-                  <span className="text-sm font-bold tracking-tight">{cl?.name} · {p.name}</span>
-                  <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${p.id === selectedId ? "bg-primary text-white shadow-sm" : "bg-gray-200 text-gray-600"}`}>
-                    {milestones?.filter(m => m.project_id === p.id).length || 0}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          {isProjectLoading ? (
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-32 rounded-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 flex-1 min-w-0">
+              {filteredProjects.map((p) => {
+                const cl = clients?.find((c) => c.id === p.client_id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => navigate(`/projects?id=${p.id}`)}
+                    className={`shrink-0 flex items-center gap-2 rounded-full border px-4 py-2 transition-all ${p.id === selectedId
+                      ? "border-primary bg-primary/10 text-primary shadow-sm"
+                      : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground hover:bg-white"
+                      }`}
+                  >
+                    <span className="text-sm font-bold tracking-tight">{cl?.name} · {p.name}</span>
+                    <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${p.id === selectedId ? "bg-primary text-white shadow-sm" : "bg-gray-200 text-gray-600"}`}>
+                      {milestones?.filter(m => m.project_id === p.id).length || 0}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="relative shrink-0">
             <button
               onClick={() => setShowAddDropdown(!showAddDropdown)}
@@ -1129,7 +1218,16 @@ const Projects = () => {
           </div>
         </div>
 
-        {project && (
+        {isProjectLoading ? (
+          <div className="space-y-4 pt-2">
+            <Skeleton className="h-32 w-full rounded-lg" />
+            <Skeleton className="h-96 w-full rounded-lg" />
+            <div className="grid grid-cols-[7fr_5fr] gap-4">
+              <Skeleton className="h-[500px] w-full rounded-lg" />
+              <Skeleton className="h-[500px] w-full rounded-lg" />
+            </div>
+          </div>
+        ) : project && (
           <>
             {/* Project Header - Dashboard Style */}
             <div className="rounded-lg border border-gray-300 bg-gradient-to-b from-gray-50 to-gray-100 p-4 space-y-3">
@@ -2077,6 +2175,7 @@ const Projects = () => {
             onSubmit={handleAddProject}
             onCancel={() => setShowAddProject(false)}
             submitLabel="Create Project"
+            isLoading={isSubmitting}
           />
         </FormModal>
 
@@ -2123,6 +2222,7 @@ const Projects = () => {
             onSubmit={handleAddMilestone}
             onCancel={() => setShowAddMilestone(false)}
             submitLabel="Add Milestone"
+            isLoading={isSubmitting}
           />
         </FormModal>
 

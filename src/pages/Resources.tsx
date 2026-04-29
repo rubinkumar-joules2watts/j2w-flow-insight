@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, Trash2, Check, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const Resources = () => {
   const qc = useQueryClient();
@@ -173,21 +174,8 @@ const Resources = () => {
   }).filter((d) => d.hours > 0) || [];
 
   // Gantt months
+  // Gantt months
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-  if (isInitialLoading) {
-    return (
-      <AppLayout>
-        <Topbar title="Resource Allocation" />
-        <div className="flex h-[80vh] items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
-            <p className="text-sm font-bold text-gray-500 uppercase tracking-widest">Loading Records...</p>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
 
   return (
     <AppLayout>
@@ -238,82 +226,100 @@ const Resources = () => {
           </button>
         </div>
         <div className="grid grid-cols-4 gap-3">
-          {filteredMembers.map((primaryMember) => {
-            const memberProjects = getProjectsForMember(primaryMember);
-            return (
-              <div key={primaryMember.id} onClick={() => setEditMember(primaryMember.id)} className="group cursor-pointer rounded-2xl border border-gray-300 bg-white shadow-sm hover:border-blue-500/50 hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
-                {/* Card Header: Initials + Name */}
-                <div className="flex items-center gap-3 p-4 bg-gray-100/50 border-b border-gray-200">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md border-2 border-white" style={{
-                    backgroundColor: primaryMember.resource_type === 'External' ? '#6366F1' : primaryMember.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E'
-                  }}>
-                    {primaryMember.initials}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-gray-900 truncate leading-tight">{primaryMember.name}</p>
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
-                      primaryMember.resource_type === 'Consultant' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
-                        "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
-                      }`}>
-                      {primaryMember.resource_type || "Internal"}
-                    </span>
+          {isInitialLoading ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-2xl border border-gray-300 bg-white shadow-sm flex flex-col overflow-hidden h-48 p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
                   </div>
                 </div>
-
-                {/* Allocation Progress */}
-                <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Allocation</span>
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(primaryMember.engagement_pct || 0) > 80 ? "bg-emerald-100 text-emerald-600" :
-                      (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
-                        "bg-red-100 text-red-600"
-                      }`}>
-                      {primaryMember.engagement_pct || 0}%
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden shadow-inner">
-                    <div
-                      className={`h-full transition-all duration-500 ease-out rounded-full ${engagementColor(primaryMember.engagement_pct || 0)}`}
-                      style={{ width: `${Math.min(100, primaryMember.engagement_pct || 0)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Stacked Roles Section */}
-                <div className="flex flex-col flex-1 divide-y divide-gray-200">
-                  {memberProjects.length === 0 ? (
-                    <div className="p-4 py-8 text-center bg-gray-50/30">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Unassigned</p>
-                      <p className="text-[11px] text-gray-500 font-medium italic">{primaryMember.role}</p>
-                    </div>
-                  ) : (
-                    memberProjects.map((p, pIdx) => (
-                      <div key={`${primaryMember.id}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
-                        </div>
-                        <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
-                          <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/50">
-                            {p.engagementLevel}%
-                          </span>
-                          <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
-                            {p.projectName}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Card Footer: Actions */}
-                <div className="mt-auto px-4 py-2 bg-gray-50/30 border-t border-gray-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => setConfirmDeleteMember(primaryMember.name)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-all" title="Delete Member Profile">
-                    <Trash2 size={13} />
-                  </button>
+                <div className="space-y-2 pt-2">
+                  <Skeleton className="h-2 w-full rounded-full" />
+                  <Skeleton className="h-8 w-full rounded-md mt-4" />
                 </div>
               </div>
-            );
-          })}
+            ))
+          ) : (
+            filteredMembers.map((primaryMember) => {
+              const memberProjects = getProjectsForMember(primaryMember);
+              return (
+                <div key={primaryMember.id} onClick={() => setEditMember(primaryMember.id)} className="group cursor-pointer rounded-2xl border border-gray-300 bg-white shadow-sm hover:border-blue-500/50 hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
+                  {/* Card Header: Initials + Name */}
+                  <div className="flex items-center gap-3 p-4 bg-gray-100/50 border-b border-gray-200">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-md border-2 border-white" style={{
+                      backgroundColor: primaryMember.resource_type === 'External' ? '#6366F1' : primaryMember.resource_type === 'Consultant' ? '#F59E0B' : '#22C55E'
+                    }}>
+                      {primaryMember.initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-900 truncate leading-tight">{primaryMember.name}</p>
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 mt-1 text-[7px] font-bold uppercase border tracking-widest ${primaryMember.resource_type === 'External' ? "bg-indigo-400/10 text-indigo-500 border-indigo-400/20" :
+                        primaryMember.resource_type === 'Consultant' ? "bg-amber-400/10 text-amber-500 border-amber-400/20" :
+                          "bg-emerald-400/10 text-emerald-500 border-emerald-400/20"
+                        }`}>
+                        {primaryMember.resource_type || "Internal"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Allocation Progress */}
+                  <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Allocation</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${(primaryMember.engagement_pct || 0) > 80 ? "bg-emerald-100 text-emerald-600" :
+                        (primaryMember.engagement_pct || 0) >= 50 ? "bg-amber-100 text-amber-600" :
+                          "bg-red-100 text-red-600"
+                        }`}>
+                        {primaryMember.engagement_pct || 0}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden shadow-inner">
+                      <div
+                        className={`h-full transition-all duration-500 ease-out rounded-full ${engagementColor(primaryMember.engagement_pct || 0)}`}
+                        style={{ width: `${Math.min(100, primaryMember.engagement_pct || 0)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Stacked Roles Section */}
+                  <div className="flex flex-col flex-1 divide-y divide-gray-200">
+                    {memberProjects.length === 0 ? (
+                      <div className="p-4 py-8 text-center bg-gray-50/30">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Unassigned</p>
+                        <p className="text-[11px] text-gray-500 font-medium italic">{primaryMember.role}</p>
+                      </div>
+                    ) : (
+                      memberProjects.map((p, pIdx) => (
+                        <div key={`${primaryMember.id}-${p.projectName}-${pIdx}`} className={`flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors ${pIdx % 2 === 0 ? "bg-gray-50/50" : "bg-white"}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-tight truncate">{p.role}</p>
+                          </div>
+                          <div className="ml-2 flex flex-shrink-0 items-center gap-1.5">
+                            <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200/50">
+                              {p.engagementLevel}%
+                            </span>
+                            <span className="text-[11px] font-bold text-gray-700 bg-gray-200/50 px-2 py-0.5 rounded-md border border-gray-300/30 whitespace-nowrap shadow-sm group-hover:bg-white transition-all">
+                              {p.projectName}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Card Footer: Actions */}
+                  <div className="mt-auto px-4 py-2 bg-gray-50/30 border-t border-gray-100 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => setConfirmDeleteMember(primaryMember.name)} className="rounded-md p-1.5 text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-all" title="Delete Member Profile">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
         {/* Allocation Matrix */}
@@ -334,35 +340,50 @@ const Resources = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredMembers.map((primaryMember, idx) => {
-                  const isEvenRow = idx % 2 === 0;
-                  return (
-                    <tr key={primaryMember.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
-                      <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{primaryMember.name}</td>
-                      {filteredProjects.map((p) => {
-                        const isAssigned = (primaryMember.engagements || []).some((e: any) => e.project_id === p.id);
-                        const isConfirming = confirmToggle?.memberId === primaryMember.id && confirmToggle?.projectId === p.id;
-                        return (
-                          <td key={p.id} className="px-4 py-4 text-center">
-                            {isConfirming ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <button onClick={() => handleToggleAssignment(primaryMember.id, p.id)} className="text-emerald-600 hover:text-emerald-700"><Check size={16} /></button>
-                                <button onClick={() => setConfirmToggle(null)} className="text-gray-500 hover:text-gray-700"><X size={16} /></button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => isAssigned ? setConfirmToggle({ memberId: primaryMember.id, projectId: p.id }) : handleToggleAssignment(primaryMember.id, p.id)}
-                                className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-gray-300 hover:bg-gray-400"}`}
-                              >
-                                {isAssigned && <Check size={14} className="text-white font-bold" />}
-                              </button>
-                            )}
-                          </td>
-                        );
-                      })}
+                {isInitialLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className={`border-b border-gray-200 ${i % 2 === 0 ? "bg-gray-50" : "bg-white"} transition-all duration-200`}>
+                      <td className="px-6 py-4 sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">
+                        <Skeleton className="h-4 w-32" />
+                      </td>
+                      {Array.from({ length: Math.min(10, projects?.length || 5) }).map((_, j) => (
+                        <td key={j} className="px-4 py-4">
+                          <Skeleton className="h-6 w-6 rounded-full mx-auto" />
+                        </td>
+                      ))}
                     </tr>
-                  );
-                })}
+                  ))
+                ) : (
+                  filteredMembers.map((primaryMember, idx) => {
+                    const isEvenRow = idx % 2 === 0;
+                    return (
+                      <tr key={primaryMember.id} className={`border-b border-gray-200 ${isEvenRow ? "bg-gray-50" : "bg-white"} hover:bg-blue-50 last:border-0 transition-all duration-200`}>
+                        <td className="px-6 py-4 text-gray-900 font-bold sticky left-0 z-10 min-w-[200px] bg-gradient-to-r from-gray-100 to-transparent">{primaryMember.name}</td>
+                        {filteredProjects.map((p) => {
+                          const isAssigned = (primaryMember.engagements || []).some((e: any) => e.project_id === p.id);
+                          const isConfirming = confirmToggle?.memberId === primaryMember.id && confirmToggle?.projectId === p.id;
+                          return (
+                            <td key={p.id} className="px-4 py-4 text-center">
+                              {isConfirming ? (
+                                <div className="flex items-center justify-center gap-1">
+                                  <button onClick={() => handleToggleAssignment(primaryMember.id, p.id)} className="text-emerald-600 hover:text-emerald-700"><Check size={16} /></button>
+                                  <button onClick={() => setConfirmToggle(null)} className="text-gray-500 hover:text-gray-700"><X size={16} /></button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => isAssigned ? setConfirmToggle({ memberId: primaryMember.id, projectId: p.id }) : handleToggleAssignment(primaryMember.id, p.id)}
+                                  className={`h-6 w-6 rounded-full mx-auto flex items-center justify-center transition-all duration-200 ${isAssigned ? "bg-blue-500 hover:bg-blue-600 shadow-lg shadow-blue-500/50" : "bg-gray-300 hover:bg-gray-400"}`}
+                                >
+                                  {isAssigned && <Check size={14} className="text-white font-bold" />}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -541,7 +562,7 @@ const Resources = () => {
               <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete the profile for <span className="font-bold text-red-600">{confirmDeleteMember}</span>? This will remove all associated project records and designations for this person across all documents.</p>
               <div className="flex gap-3">
                 <button onClick={() => setConfirmDeleteMember(null)} className="flex-1 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all">Cancel</button>
-                <button onClick={() => handleDeleteGroup(confirmDeleteMember)} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 shadow-lg shadow-red-600/30 transition-all">Delete Everything</button>
+                <button onClick={() => handleDeleteMember(confirmDeleteMember)} className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 shadow-lg shadow-red-600/30 transition-all">Delete Everything</button>
               </div>
             </div>
           </div>
