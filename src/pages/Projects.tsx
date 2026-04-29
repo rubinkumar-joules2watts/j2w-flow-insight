@@ -380,8 +380,22 @@ const Projects = () => {
       }
     }
 
+    // Optimistic Update
+    qc.setQueryData(["milestones"], (old: any) => {
+      if (!old) return old;
+      return old.map((m: any) => m.id === id ? { ...m, ...next } : m);
+    });
+
     const { error } = await api.from("milestones").update(next as any).eq("id", id);
-    if (error) { toast.error("Failed to update"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["milestones"], (old: any) => {
+        if (!old) return old;
+        return old.map((m: any) => m.id === id ? { ...m, ...current } : m);
+      });
+      toast.error("Failed to update"); 
+      return; 
+    }
 
     const changedFields = Object.keys(next);
     const oldValues = changedFields.reduce((acc, key) => {
@@ -403,8 +417,23 @@ const Projects = () => {
     if (!current) return;
 
     const next: Record<string, unknown> = { [field]: value };
+    
+    // Optimistic Update
+    qc.setQueryData(["project_updates"], (old: any) => {
+      if (!old) return old;
+      return old.map((u: any) => u.id === id ? { ...u, ...next } : u);
+    });
+
     const { error } = await api.from("project_updates").update(next as any).eq("id", id);
-    if (error) { toast.error("Failed to update timeline"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["project_updates"], (old: any) => {
+        if (!old) return old;
+        return old.map((u: any) => u.id === id ? { ...u, ...current } : u);
+      });
+      toast.error("Failed to update timeline"); 
+      return; 
+    }
 
     const changedFields = Object.keys(next);
     const oldValues = changedFields.reduce((acc, key) => {
@@ -465,6 +494,17 @@ const Projects = () => {
       }
     }
 
+    // Optimistic Update
+    qc.setQueryData(["milestones"], (old: any) => {
+      if (!old) return old;
+      return old.map((m: any) => {
+        if (m.id === actualId) {
+           return { ...m, ...payload };
+        }
+        return m;
+      });
+    });
+
     try {
       const response = await fetch(`https://j2w-tracker-backend.onrender.com/api/milestones/${actualId}`, {
         method: "PUT",
@@ -472,7 +512,9 @@ const Projects = () => {
         body: JSON.stringify(payload)
       });
       console.log("THE ACTUAL ID", actualId);
-      if (!response.ok) throw new Error("API error");
+      if (!response.ok) {
+        throw new Error("API error");
+      }
       qc.invalidateQueries({ queryKey: ["milestones"] });
       qc.invalidateQueries({ queryKey: ["milestone_health", selectedId] });
       toast.success(`✓ Updated ${field.replace(/_/g, " ")} · ${new Date().toLocaleTimeString()}`);
@@ -483,8 +525,23 @@ const Projects = () => {
 
   const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
     if (!project) return;
+    
+    // Optimistic Update
+    qc.setQueryData(["projects"], (old: any) => {
+      if (!old) return old;
+      return old.map((p: any) => p.id === project.id ? { ...p, [field]: value } : p);
+    });
+
     const { error } = await api.from("projects").update({ [field]: value } as any).eq("id", project.id);
-    if (error) { toast.error("Failed to update"); return; }
+    if (error) { 
+      // Rollback
+      qc.setQueryData(["projects"], (old: any) => {
+        if (!old) return old;
+        return old.map((p: any) => p.id === project.id ? { ...p, [field]: oldVal } : p);
+      });
+      toast.error("Failed to update"); 
+      return; 
+    }
     await writeAuditLog("projects", project.id, "UPDATE", { [field]: oldVal }, { [field]: value }, [field]);
     qc.invalidateQueries({ queryKey: ["projects"] });
     toast.success(`✓ Updated ${field} · ${new Date().toLocaleTimeString()}`);
@@ -493,6 +550,14 @@ const Projects = () => {
 
   const updateProjectStatusViaAPI = useCallback(async (value: string) => {
     if (!project) return;
+    const oldStatus = project.status;
+    
+    // Optimistic Update
+    qc.setQueryData(["projects"], (old: any) => {
+      if (!old) return old;
+      return old.map((p: any) => p.id === project.id ? { ...p, status: value } : p);
+    });
+
     try {
       const response = await fetch(apiUrl(`/api/projects/${project.id}`), {
         method: "PUT",
@@ -504,14 +569,21 @@ const Projects = () => {
       toast.success(`✓ Project Status updated to ${value} · ${new Date().toLocaleTimeString()}`);
       showSaved("proj-status");
     } catch (err) {
+      // Rollback
+      qc.setQueryData(["projects"], (old: any) => {
+        if (!old) return old;
+        return old.map((p: any) => p.id === project.id ? { ...p, status: oldStatus } : p);
+      });
       toast.error("Failed to update project status");
     }
   }, [qc, project]);
 
   // Add project form
   const [newProject, setNewProject] = useState({ clientName: "", name: "", code: "", serviceType: "Outcome", revenueModel: "Milestone", deliveryManager: "", clientSpoc: "", handledBy: "", memberIds: [] as string[] });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddProject = async () => {
+    setIsSubmitting(true);
     let clientId: string;
     const existing = clients?.find((c) => c.name.toLowerCase() === newProject.clientName.toLowerCase());
     if (existing) { clientId = existing.id; }
@@ -538,10 +610,12 @@ const Projects = () => {
     qc.invalidateQueries({ queryKey: ["clients"] });
     toast.success(`✓ Project created · ${new Date().toLocaleTimeString()}`);
     setShowAddProject(false);
+    setIsSubmitting(false);
     navigate(`/projects?id=${proj.id}`);
   };
 
   const handleWizardSave = async (wizardData: any) => {
+    setIsSubmitting(true);
     try {
       // 1. Find or create client
       let clientId: string;
@@ -628,21 +702,25 @@ const Projects = () => {
       navigate(`/projects?id=${proj.id}`);
     } catch (e) {
       toast.error("Unexpected error creating project");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const [newMs, setNewMs] = useState({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
   const handleAddMilestone = async () => {
+    setIsSubmitting(true);
     const { data, error } = await api.from("milestones").insert({
       project_id: selectedId, milestone_code: newMs.code, description: newMs.description,
       planned_start: newMs.plannedStart || null, planned_end: newMs.plannedEnd || null,
       deliverables: newMs.deliverables || null,
     }).select().single();
-    if (error) { toast.error("Failed to add milestone"); return; }
+    if (error) { toast.error("Failed to add milestone"); setIsSubmitting(false); return; }
     await writeAuditLog("milestones", data.id, "INSERT", null, data);
     qc.invalidateQueries({ queryKey: ["milestones"] });
     toast.success(`✓ Milestone added · ${new Date().toLocaleTimeString()}`);
     setShowAddMilestone(false);
+    setIsSubmitting(false);
     setNewMs({ code: "", description: "", plannedStart: "", plannedEnd: "", deliverables: "" });
   };
 
@@ -2097,6 +2175,7 @@ const Projects = () => {
             onSubmit={handleAddProject}
             onCancel={() => setShowAddProject(false)}
             submitLabel="Create Project"
+            isLoading={isSubmitting}
           />
         </FormModal>
 
@@ -2143,6 +2222,7 @@ const Projects = () => {
             onSubmit={handleAddMilestone}
             onCancel={() => setShowAddMilestone(false)}
             submitLabel="Add Milestone"
+            isLoading={isSubmitting}
           />
         </FormModal>
 
