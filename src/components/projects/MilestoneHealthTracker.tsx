@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MilestoneHealthData, MilestoneHealthPhase, WeekData, Milestone, useDeleteMilestonePracticeStatus } from "@/hooks/useData";
 import { Loader2, Pencil, Plus as PlusIcon, Trash2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
-import { parseISO, getMonth, getYear, format } from 'date-fns';
+import { parseISO, format } from 'date-fns';
 
 interface MilestoneHealthTrackerProps {
   data?: MilestoneHealthData;
@@ -562,7 +562,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
   const backendAllWeeks = data.all_weeks || {};
   const allMilestones = projectMilestones || [];
 
-  // Generate Global Grid from calendar_months
+  // Build full display grid from calendar_months (can extend beyond populated backend weeks).
   const monthGroups: Record<string, { startIdx: number; endIdx: number; label: string; weeks_count: number }> = {};
   const monthOrder: string[] = [];
   const processedAllWeeks: Record<string, { start: string; label: string }> = {};
@@ -577,75 +577,153 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
     }))
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  // Match the calendar columns with weeks
-  let gridWeekCounter = 0;
+  // Generate a continuous Mon-Sun week grid spanning all calendar_months.
+  // We use UTC for stability and assign each generated week to the month
+  // containing its Monday, so labels like "May 4-10" land in May (W1), and
+  // "Apr 27-May 3" stays in April (last column).
+  type DisplayWeek = {
+    startTime: number;
+    startISO: string;
+    label: string;
+    monthKey: string;
+  };
 
-  calendarMonths.forEach((m) => {
-    const monthKey = m.month_year;
-    const startIdx = gridWeekCounter;
-    const weeksCount = m.weeks_count;
-    const endIdx = gridWeekCounter + weeksCount - 1;
+  const displayWeeks: DisplayWeek[] = [];
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-    monthGroups[monthKey] = {
-      startIdx,
-      endIdx,
-      label: m.month_year,
-      weeks_count: m.weeks_count
-    };
-    monthOrder.push(monthKey);
-    gridWeekCounter += weeksCount;
+  if (calendarMonths.length > 0) {
+    const firstMonth = calendarMonths[0];
+    const lastMonth = calendarMonths[calendarMonths.length - 1];
+
+    // First Monday on or after the 1st day of the first month.
+    const firstDayUtc = Date.UTC(firstMonth.year, firstMonth.month - 1, 1);
+    const firstDow = new Date(firstDayUtc).getUTCDay(); // 0=Sun..6=Sat
+    const daysForwardToMonday = firstDow === 1 ? 0 : firstDow === 0 ? 1 : 8 - firstDow;
+    let cursor = firstDayUtc + daysForwardToMonday * MS_PER_DAY;
+
+    // Last Monday on or before the last day of the last month.
+    const lastDayUtc = Date.UTC(lastMonth.year, lastMonth.month, 0);
+    const lastDow = new Date(lastDayUtc).getUTCDay();
+    const daysBackToMonday = lastDow === 1 ? 0 : lastDow === 0 ? 6 : lastDow - 1;
+    const endTime = lastDayUtc - daysBackToMonday * MS_PER_DAY;
+
+    while (cursor <= endTime) {
+      const monStart = new Date(cursor);
+      const sunEnd = new Date(cursor + 6 * MS_PER_DAY);
+
+      const startMonth = monStart.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+      const endMonth = sunEnd.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+      const startDay = monStart.getUTCDate();
+      const endDay = sunEnd.getUTCDate();
+      const year = sunEnd.getUTCFullYear();
+      const label = startMonth === endMonth
+        ? `${startMonth} ${startDay}-${endDay}, ${year}`
+        : `${startMonth} ${startDay}-${endMonth} ${endDay}, ${year}`;
+
+      const monthKey = `${startMonth} ${monStart.getUTCFullYear()}`;
+      displayWeeks.push({
+        startTime: cursor,
+        startISO: monStart.toISOString(),
+        label,
+        monthKey,
+      });
+
+      cursor += 7 * MS_PER_DAY;
+    }
+  }
+
+  // Build month groups directly from generated weeks (Monday-of-week determines month).
+  displayWeeks.forEach((w, idx) => {
+    if (!monthGroups[w.monthKey]) {
+      monthGroups[w.monthKey] = { startIdx: idx, endIdx: idx, label: w.monthKey, weeks_count: 1 };
+      monthOrder.push(w.monthKey);
+    } else {
+      monthGroups[w.monthKey].endIdx = idx;
+      monthGroups[w.monthKey].weeks_count += 1;
+    }
+    processedAllWeeks[String(idx)] = { start: w.startISO, label: w.label };
   });
 
-  // Pre-calculate mapping
-  const getGridIdxFromDate = (dateStr: string) => {
-    if (!dateStr) return -1;
-    const targetDate = parseISO(dateStr);
-
-    const targetMonth = getMonth(targetDate) + 1;
-    const targetYear = getYear(targetDate);
-
-    let gridWeekCounter = 0;
-    for (const m of calendarMonths) {
-      if (m.month === targetMonth && m.year === targetYear) {
-        const monthStart = new Date(m.year, m.month - 1, 1);
-        const startDayOfWeek = monthStart.getDay(); // 0 = Sunday
-        const diffDays = Math.floor((targetDate.getTime() - monthStart.getTime()) / (1000 * 60 * 60 * 24));
-        const weekOffsetInMonth = diffDays >= 0 ? Math.floor((diffDays + startDayOfWeek) / 7) : 0;
-        return gridWeekCounter + Math.min(weekOffsetInMonth, m.weeks_count - 1);
-      }
-      gridWeekCounter += m.weeks_count;
+  // Map any date to its display column index using the generated grid.
+  const getDisplayIdxFromDate = (dateStr: string) => {
+    if (!dateStr || displayWeeks.length === 0) return -1;
+    const t = parseISO(dateStr).getTime();
+    for (let i = 0; i < displayWeeks.length; i++) {
+      const start = displayWeeks[i].startTime;
+      const end = i < displayWeeks.length - 1
+        ? displayWeeks[i + 1].startTime
+        : start + 7 * MS_PER_DAY;
+      if (t >= start && t < end) return i;
     }
-
     return -1;
   };
 
-  // Populate processedAllWeeks for rendering placeholders mapped directly to their ID positions.
+  // Map each backend week (all_weeks[N]) to its true display column by date.
+  const backendWeekToDisplayIdx: Record<number, number> = {};
+  const displayIdxToBackendWeek: Record<number, number> = {};
+
   sortedWeeksData.forEach((w) => {
-    processedAllWeeks[String(w.originalId)] = {
-      start: w.startStr,
-      label: w.label
-    };
+    const displayIdx = getDisplayIdxFromDate(w.startStr);
+    if (displayIdx >= 0) {
+      backendWeekToDisplayIdx[w.originalId] = displayIdx;
+      displayIdxToBackendWeek[displayIdx] = w.originalId;
+      // Prefer backend label over our auto-generated label.
+      processedAllWeeks[String(displayIdx)] = { start: w.startStr, label: w.label };
+    }
   });
 
-  // Practice weeks directly tell us which grid column they belong to.
+  const getGridIdxFromDate = getDisplayIdxFromDate;
+
   const getGridIdxFromBackendWeek = (backendWeekNum: number) => {
-    return backendWeekNum;
+    return backendWeekToDisplayIdx[backendWeekNum] ?? -1;
   };
 
   // Pre-calculate Health Matrix for easy lookup
   const gridMatrix: Record<string, Record<number, any>> = {};
 
   ["practice", "signoff", "invoice"].forEach(type => {
-    const rows = data[type as keyof MilestoneHealthData] || [];
+    const rows = (data[type as keyof MilestoneHealthData] as MilestoneHealthPhase[]) || [];
     rows.forEach((hm: any) => {
       const key = `${hm.milestone_code}-${type}`;
       if (!gridMatrix[key]) gridMatrix[key] = {};
 
+      // 1) Place backend-provided weeks first using the date when available
+      //    (more reliable than week_number, which can have backend drift).
       if (hm.weeks) {
         hm.weeks.forEach((w: any) => {
-          const gIdx = getGridIdxFromBackendWeek(w.week_number);
+          let gIdx = -1;
+          if (w.date) {
+            gIdx = getGridIdxFromDate(w.date);
+          }
+          if (gIdx < 0) {
+            gIdx = getGridIdxFromBackendWeek(w.week_number);
+          }
           if (gIdx >= 0) gridMatrix[key][gIdx] = w;
         });
+      }
+
+      // 2) For practice, fill any gaps between start_date and end_date with a
+      //    default "On Track" status so a contiguous timeline renders even
+      //    when backend's weeks array has holes or skipped weeks.
+      if (type === "practice" && hm.start_date && hm.end_date) {
+        const startIdx = getDisplayIdxFromDate(hm.start_date);
+        const endIdx = getDisplayIdxFromDate(hm.end_date);
+        if (startIdx >= 0 && endIdx >= 0) {
+          const lo = Math.min(startIdx, endIdx);
+          const hi = Math.max(startIdx, endIdx);
+          for (let i = lo; i <= hi; i++) {
+            if (!gridMatrix[key][i]) {
+              const meta = processedAllWeeks[String(i)];
+              gridMatrix[key][i] = {
+                week_number: displayIdxToBackendWeek[i] ?? i,
+                week_label: meta?.label || `Week ${i}`,
+                status: "On Track",
+                color: "green",
+                date: meta?.start || ""
+              };
+            }
+          }
+        }
       }
 
       if (hm.date) {
@@ -654,16 +732,15 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
           const isDone = hm.status === 'Done' || hm.status === 'Completed';
           const isPartial = hm.status === 'Partial';
 
-          const matchedWeek = sortedWeeksData.find((w) => w.originalId === gIdx);
-
           const fallbackLabel = format(parseISO(hm.date), "MMM d, yyyy");
+          const colLabel = processedAllWeeks[String(gIdx)]?.label;
 
           gridMatrix[key][gIdx] = {
-            week_number: matchedWeek ? matchedWeek.originalId : 0,
+            week_number: displayIdxToBackendWeek[gIdx] ?? gIdx,
             status: hm.status || 'Pending',
             color: isDone ? 'blue' : isPartial ? 'indigo' : 'gray',
             date: hm.date,
-            week_label: matchedWeek?.label || fallbackLabel
+            week_label: colLabel || fallbackLabel
           };
         }
       }
@@ -758,6 +835,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                   >
                     {weeksInMonth.map((weekIdx, i) => {
                       const weekMeta = processedAllWeeks[String(weekIdx)];
+                      const backendWeekNumber = displayIdxToBackendWeek[weekIdx] ?? weekIdx;
                       const weekLabel = weekMeta?.label || `Week ${weekIdx}`;
 
                       // USE allMilestones as the master list for rows
@@ -797,7 +875,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                                   type={phase.type}
                                   allWeeks={processedAllWeeks}
                                   milestone={m.milestone_code || ""}
-                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, weekIdx, week.week_label, week.date, false) : undefined}
+                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, week.week_number ?? backendWeekNumber, week.week_label, week.date, false) : undefined}
                                 />
                               );
                             } else {
@@ -808,7 +886,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
                                   allWeeks={processedAllWeeks}
                                   milestoneCode={m.milestone_code || ""}
                                   hideCode={phase.type !== "practice"}
-                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, weekIdx, weekLabel, weekMeta?.start || new Date().toISOString().split("T")[0], true) : undefined}
+                                  onClick={phase.type === "practice" ? () => handleModalOpen(phase.type, milestoneToEdit, backendWeekNumber, weekLabel, weekMeta?.start || new Date().toISOString().split("T")[0], true) : undefined}
                                 />
                               );
                             }
