@@ -54,7 +54,7 @@ const getStatusColor = (color: string): string => {
     blue: "#3b82f6",
     orange: "#f97316",
     red: "#ef4444",
-    indigo: "#6366f1",
+    indigo: "#4f46e5",
     gray: "#d1d5db",
   };
   return colorMap[color] || "#d1d5db";
@@ -69,7 +69,7 @@ const getStatusColorClass = (colorOrStatus: string): string => {
   if (norm.includes("at risk")) return "bg-orange-500 shadow-orange-500/20";
   if (norm.includes("blocked")) return "bg-red-500 shadow-red-500/20";
   if (norm.includes("done")) return "bg-blue-500 shadow-blue-500/20";
-  if (norm.includes("partial")) return "bg-indigo-500 shadow-indigo-500/20";
+  if (norm.includes("partial")) return "bg-indigo-600 shadow-indigo-600/20";
   if (norm.includes("pending")) return "bg-gray-300";
 
   // Fallback to color mapping
@@ -78,7 +78,7 @@ const getStatusColorClass = (colorOrStatus: string): string => {
     blue: "bg-blue-500 shadow-blue-500/20",
     orange: "bg-orange-500 shadow-orange-500/20",
     red: "bg-red-500 shadow-red-500/20",
-    indigo: "bg-indigo-500 shadow-indigo-500/20",
+    indigo: "bg-indigo-600 shadow-indigo-600/20",
     gray: "bg-gray-300",
   };
   return colorMap[norm] || "bg-gray-300";
@@ -932,7 +932,7 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
             <span className="text-gray-600">Blocked</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#6366f1" }} />
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: "#4f46e5" }} />
             <span className="text-gray-600">Partial</span>
           </div>
           <div className="flex items-center gap-2">
