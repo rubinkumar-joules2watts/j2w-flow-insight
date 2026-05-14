@@ -702,30 +702,6 @@ export const MilestoneHealthTracker = ({ data, loading, error, onDataRefresh, pr
         });
       }
 
-      // 2) For practice, fill any gaps between start_date and end_date with a
-      //    default "On Track" status so a contiguous timeline renders even
-      //    when backend's weeks array has holes or skipped weeks.
-      if (type === "practice" && hm.start_date && hm.end_date) {
-        const startIdx = getDisplayIdxFromDate(hm.start_date);
-        const endIdx = getDisplayIdxFromDate(hm.end_date);
-        if (startIdx >= 0 && endIdx >= 0) {
-          const lo = Math.min(startIdx, endIdx);
-          const hi = Math.max(startIdx, endIdx);
-          for (let i = lo; i <= hi; i++) {
-            if (!gridMatrix[key][i]) {
-              const meta = processedAllWeeks[String(i)];
-              gridMatrix[key][i] = {
-                week_number: displayIdxToBackendWeek[i] ?? i,
-                week_label: meta?.label || `Week ${i}`,
-                status: "On Track",
-                color: "green",
-                date: meta?.start || ""
-              };
-            }
-          }
-        }
-      }
-
       if (hm.date) {
         const gIdx = getGridIdxFromDate(hm.date);
         if (gIdx >= 0) {

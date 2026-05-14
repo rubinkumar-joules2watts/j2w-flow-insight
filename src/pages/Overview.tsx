@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
 import FilterSelect from "@/components/common/FilterSelect";
@@ -13,7 +13,7 @@ import {
 import {
   RefreshCw, Bell, ArrowRight, ChevronLeft, ChevronRight,
   Briefcase, TrendingUp, ShieldAlert, Archive, CheckCircle2, Circle,
-  Search, Zap,
+  Search, Zap, Target, Wallet, Landmark, Percent,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Lottie from "lottie-react";
@@ -23,6 +23,13 @@ import atRiskAnim from "../../public/json/business-persons-bickering-with-each-o
 import blockedAnim from "../../public/json/office-drawer.json";
 import completedAnim from "../../public/json/successful-business-agreement.json";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  RevenueStatCard,
+  aggregateRevenueForProjectList,
+  formatRupeeCompact,
+  formatPercentFromNumber,
+  projectRevenueFromApi,
+} from "@/lib/revenueDisplay";
 
 interface DashboardCounters {
   active_projects: number;
@@ -43,7 +50,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const statusBadge = (s: string | null) => {
-  const base = "inline-flex items-center rounded-full px-3 py-1 text-xs font-bold";
+  const base = "inline-flex items-center rounded-full px-3.5 py-1.5 text-sm font-bold";
   if (s === "On Track") return `${base} bg-emerald-100 text-emerald-700 border border-emerald-300`;
   if (s === "At Risk") return `${base} bg-amber-100 text-amber-700 border border-amber-300`;
   if (s === "Blocked") return `${base} bg-red-100 text-red-700 border border-red-300`;
@@ -89,7 +96,6 @@ const Overview = () => {
   const [projectSearch, setProjectSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
-
   useEffect(() => {
     const channel = api.channel("overview-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => {
@@ -117,6 +123,29 @@ const Overview = () => {
     const bySearch = !projectSearch.trim() || p.name.toLowerCase().includes(projectSearch.toLowerCase().trim());
     return byClient && byStatus && bySearch;
   });
+
+  const revenueScopeLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (clientFilter === "all") parts.push("All clients");
+    else {
+      const cn = clients?.find((c) => c.id === clientFilter)?.name;
+      parts.push(cn || "Selected client");
+    }
+    if (statusFilter === "all") parts.push("All statuses");
+    else if (statusFilter === "Active") parts.push("Active (On Track + At Risk)");
+    else parts.push(statusFilter);
+    if (projectSearch.trim()) parts.push(`Search: "${projectSearch.trim()}"`);
+    return parts.join(" · ");
+  }, [clientFilter, statusFilter, projectSearch, clients]);
+
+  const revenueTotals = useMemo(
+    () => aggregateRevenueForProjectList(filteredProjects, milestones || []),
+    [filteredProjects, milestones]
+  );
+
+  const realizedFootnote = revenueTotals.hasAmounts
+    ? "Portfolio actualized ÷ planned for projects in the current filter"
+    : "Enter planned totals and milestone values on each project to populate revenue.";
 
   const totalProjects = (projects || []).length;
 
@@ -172,13 +201,6 @@ const Overview = () => {
   const getProjectResources = (projectId: string) => {
     const memberIds = assignments?.filter((a) => a.project_id === projectId).map((a) => a.team_member_id) || [];
     return members?.filter((m) => memberIds.includes(m.id)).map((m) => m.name).join(", ") || "—";
-  };
-
-  const getProjectCompletion = (projectId: string) => {
-    const pMs = (milestones || []).filter((m) => m.project_id === projectId);
-    if (!pMs.length) return 0;
-    const avg = pMs.reduce((sum, m) => sum + (m.completion_pct || 0), 0) / pMs.length;
-    return Math.round(avg);
   };
 
   const getSignoffProgress = (projectId: string) => {
@@ -347,19 +369,75 @@ const Overview = () => {
           )}
         </div>
 
+        {/* Revenue analytics — same filter scope as project list (KPI + dropdown + search) */}
+        {!isLoading && (
+        <div className="rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50/80 via-white to-indigo-50/30 p-5 shadow-sm">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Revenue pipeline</h3>
+              <p className="text-[11px] font-medium text-slate-500 mt-0.5">{revenueScopeLabel}</p>
+            </div>
+            <p className="text-[10px] font-semibold text-slate-600 rounded-md bg-slate-100/90 px-2 py-1 w-fit border border-slate-200/80 max-w-md leading-snug">
+              Totals use saved data: project <span className="font-mono">total_revenue_planned_rupees</span> (when set) and milestone sums — same scope as the table below (respects Active / On Track / etc.).
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <RevenueStatCard
+              title="Total revenue planned"
+              subtitle={`Across ${filteredProjects.length} project${filteredProjects.length === 1 ? "" : "s"} in view`}
+              amountDisplay={formatRupeeCompact(revenueTotals.planned)}
+              tone="planned"
+              footnote="Sum of effective planned per row (header or milestone planned)"
+              icon={<Target size={18} className="text-indigo-600" aria-hidden />}
+            />
+            <RevenueStatCard
+              title="Total revenue received"
+              subtitle="Sum of milestone value actual (saved)"
+              amountDisplay={formatRupeeCompact(revenueTotals.received)}
+              tone="received"
+              footnote="Edit milestone actuals on each project’s Milestone Tracker"
+              icon={<Wallet size={18} className="text-emerald-600" aria-hidden />}
+            />
+            <RevenueStatCard
+              title="Remaining revenue"
+              subtitle="Planned minus received"
+              amountDisplay={formatRupeeCompact(revenueTotals.remaining)}
+              tone="remaining"
+              footnote={revenueTotals.remaining === 0 ? "Fully received vs planned in view" : undefined}
+              icon={<Landmark size={18} className="text-amber-700" aria-hidden />}
+            />
+            <RevenueStatCard
+              title="Value realized %"
+              subtitle="Portfolio from amounts in current filter"
+              amountDisplay={
+                revenueTotals.realizedPct != null
+                  ? formatPercentFromNumber(revenueTotals.realizedPct)
+                  : "—"
+              }
+              tone="realized"
+              footnote={realizedFootnote}
+              icon={<Percent size={18} className="text-violet-600" aria-hidden />}
+            />
+          </div>
+        </div>
+        )}
+
 
 
         {/* Project Status Table */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="border-b border-gray-200 px-6 py-4">
-            <h3 className="text-sm font-bold text-gray-900">Project Status</h3>
+          <div className="border-b border-gray-200 px-6 py-5 flex flex-col gap-2">
+            <h3 className="text-base font-bold text-gray-900">Project Status</h3>
+            <p className="text-sm text-slate-600 font-medium leading-relaxed max-w-4xl">
+              Revenue figures are read-only here (saved project + milestone data). Open a project to edit amounts on the Milestone Tracker.
+            </p>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-[15px] leading-snug">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50 text-left">
-                  {["CLIENT", "PROJECT", "TYPE", "MANAGER", "RESOURCES", "STATUS", "SIGNOFF", "Invoice"].map((h) => (
-                    <th key={h} className="px-5 py-3 text-[10px] font-bold text-gray-500 tracking-widest uppercase whitespace-nowrap">{h}</th>
+                  {["CLIENT", "PROJECT", "TYPE", "MANAGER", "RESOURCES", "STATUS", "SIGNOFF", "Invoice", "TOTAL BUSINESS VALUE", "ACTUALIZED VALUE", "VALUE REALIZED %"].map((h) => (
+                    <th key={h} className="px-6 py-4 text-xs font-bold text-gray-600 tracking-widest uppercase whitespace-nowrap align-bottom">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -367,14 +445,14 @@ const Overview = () => {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i} className="border-b border-gray-100 bg-white">
-                      {Array.from({ length: 8 }).map((_, j) => (
-                        <td key={j} className="px-5 py-4"><Skeleton className="h-4 w-full" /></td>
+                      {Array.from({ length: 11 }).map((_, j) => (
+                        <td key={j} className="px-6 py-5"><Skeleton className="h-5 w-full" /></td>
                       ))}
                     </tr>
                   ))
                 ) : paginatedProjects.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-5 py-12 text-center text-sm text-gray-400">
+                    <td colSpan={11} className="px-6 py-14 text-center text-base text-gray-400">
                       No projects match the current filters.
                     </td>
                   </tr>
@@ -382,32 +460,44 @@ const Overview = () => {
                   paginatedProjects.map((p, idx) => {
                     const client = clients?.find((c) => c.id === p.client_id);
                     const signoff = getSignoffProgress(p.id);
-                    const completion = getProjectCompletion(p.id);
                     const pMs = milestones?.filter((m) => m.project_id === p.id) || [];
                     const completedInvoices = pMs.filter((m) => m.invoice_status === "Done").length;
+                    const rowRev = projectRevenueFromApi(p, milestones || []);
+                    const realizedPctRow =
+                      rowRev.planned > 0 ? (rowRev.received / rowRev.planned) * 100 : null;
+                    const cell = "px-6 py-5 text-gray-700 align-middle";
                     return (
                       <tr
                         key={p.id}
                         onClick={() => navigate(`/projects?id=${p.id}`)}
                         className={`border-b border-gray-100 cursor-pointer transition-colors hover:bg-blue-50 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
                       >
-                        <td className="px-5 py-3.5 text-gray-600 font-medium whitespace-nowrap">{client?.name || "—"}</td>
-                        <td className="px-5 py-3.5 font-semibold text-gray-900 whitespace-nowrap">{p.name}</td>
-                        <td className="px-5 py-3.5 text-gray-500 whitespace-nowrap">{p.service_type || "—"}</td>
-                        <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">{p.delivery_manager || "—"}</td>
-                        <td className="px-5 py-3.5 text-gray-500 min-w-[200px] max-w-[280px] truncate">{getProjectResources(p.id)}</td>
-                        <td className="px-5 py-3.5 whitespace-nowrap">
+                        <td className={`${cell} font-medium whitespace-nowrap`}>{client?.name || "—"}</td>
+                        <td className={`${cell} font-semibold text-gray-900 whitespace-nowrap text-base`}>{p.name}</td>
+                        <td className={`${cell} text-gray-600 whitespace-nowrap`}>{p.service_type || "—"}</td>
+                        <td className={`${cell} text-gray-700 whitespace-nowrap`}>{p.delivery_manager || "—"}</td>
+                        <td className={`${cell} text-gray-600 min-w-[220px] max-w-[320px] truncate`}>{getProjectResources(p.id)}</td>
+                        <td className={`${cell} whitespace-nowrap`}>
                           <span className={statusBadge(p.status)}>{p.status || "—"}</span>
                         </td>
-                        <td className="px-5 py-3.5 text-gray-600 whitespace-nowrap">
+                        <td className={`${cell} whitespace-nowrap`}>
                           <span className="font-semibold text-gray-900">{signoff.signed}</span>
-                          <span className="text-gray-400">/{signoff.total} signed off</span>
+                          <span className="text-gray-400"> / {signoff.total} signed off</span>
                         </td>
-                        <td className="px-5 py-3.5 min-w-[140px]">
+                        <td className={`${cell} min-w-[150px]`}>
                           <div className="flex items-center gap-2">
                             <span className="font-semibold text-gray-900">{completedInvoices}</span>
-                            <span className="text-gray-400">/{pMs.length || 0} completed</span>
+                            <span className="text-gray-400"> / {pMs.length || 0} completed</span>
                           </div>
+                        </td>
+                        <td className={`${cell} min-w-[140px] font-mono text-base font-semibold tabular-nums text-slate-900`}>
+                          {formatRupeeCompact(rowRev.planned)}
+                        </td>
+                        <td className={`${cell} min-w-[140px] font-mono text-base font-semibold tabular-nums text-slate-900`}>
+                          {formatRupeeCompact(rowRev.received)}
+                        </td>
+                        <td className={`${cell} min-w-[110px] font-mono text-base font-semibold tabular-nums text-slate-900`}>
+                          {realizedPctRow != null ? formatPercentFromNumber(realizedPctRow) : "—"}
                         </td>
                       </tr>
                     );
@@ -418,8 +508,8 @@ const Overview = () => {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-3">
-            <p className="text-xs text-gray-500">
+          <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
+            <p className="text-sm text-gray-500">
               Showing {filteredProjects.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1} to{" "}
               {Math.min(currentPage * PAGE_SIZE, filteredProjects.length)} of {filteredProjects.length} projects
             </p>

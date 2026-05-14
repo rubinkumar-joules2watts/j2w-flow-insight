@@ -7,6 +7,8 @@ export type Project = {
   service_type: string | null; revenue_model: string | null; project_type: string | null;
   delivery_manager: string | null; client_spoc: string | null; handled_by: string | null;
   status: string | null; created_at: string | null; updated_at: string | null;
+  /** Whole rupees — total revenue planned (Milestone Tracker header). */
+  total_revenue_planned_rupees?: number | null;
 };
 export type Milestone = {
   _id?: string; id?: string; project_id: string | null; milestone_code: string | null;
@@ -18,6 +20,10 @@ export type Milestone = {
   client_signoff_status: string | null; signedoff_date: string | null;
   invoice_status: string | null; invoice_raised_date: string | null;
   created_at: string | null; updated_at: string | null;
+  /** Whole rupees — milestone value planned (Milestone Tracker). */
+  value_planned_rupees?: number | null;
+  /** Whole rupees — milestone value actual (Milestone Tracker). */
+  value_actual_rupees?: number | null;
 };
 export type TeamMember = {
   id: string; name: string; initials: string | null; role: string;
