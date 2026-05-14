@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import AppLayout from "@/components/layout/AppLayout";
 import Topbar from "@/components/layout/Topbar";
@@ -9,11 +9,18 @@ import { MilestoneHealthTracker } from "@/components/projects/MilestoneHealthTra
 import { api, apiUrl } from "@/lib/api";
 import { writeAuditLog } from "@/lib/audit";
 import { useQueryClient } from "@tanstack/react-query";
-import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye } from "lucide-react";
+import { Search, Filter, Plus, ChevronDown, MoreVertical, Layout, History, FileText, Activity, CheckCircle, Clock, Users, Loader2, X, AlertTriangle, Trash2, Send, Calendar, MessageSquare, ChevronRight, FileUp, Download, Paperclip, Link as LinkIcon, Upload, Pencil, Eye, Target, Wallet, Landmark, Percent } from "lucide-react";
 import { toast } from "sonner";
 import NewProposalModal from "@/components/proposal/NewProposalModal";
 import { Skeleton } from "@/components/ui/skeleton";
 import DOMPurify from 'dompurify';
+import { MilestoneRupeeCell } from "@/components/projects/MilestoneRupeeCell";
+import {
+  RevenueStatCard,
+  formatRupeeCompact,
+  formatPercentFromNumber,
+  parseRevenueInRupees,
+} from "@/lib/revenueDisplay";
 
 const formatDateReadable = (value: string | null | undefined) => {
   if (!value) return "-";
@@ -118,6 +125,11 @@ const AllocationCell = ({ memberId, projectId }: { memberId: string; projectId: 
     </div>
   );
 };
+
+function rupeesToDigitString(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n)) || Number(n) <= 0) return "";
+  return String(Math.round(Number(n)));
+}
 
 const Projects = () => {
   const [searchParams] = useSearchParams();
@@ -263,6 +275,8 @@ const Projects = () => {
   const [projectSearch, setProjectSearch] = useState("");
   const [milestoneStatusFilter, setMilestoneStatusFilter] = useState("all");
   const [milestoneSearch, setMilestoneSearch] = useState("");
+  /** Digit string for "Total revenue planned" card — synced from project, saved on blur. */
+  const [headerPlannedDigits, setHeaderPlannedDigits] = useState("");
   const [showAddHierarchyMember, setShowAddHierarchyMember] = useState(false);
   const [newUpdate, setNewUpdate] = useState("");
   const [updateDate, setUpdateDate] = useState(new Date().toISOString().split("T")[0]);
@@ -303,6 +317,59 @@ const Projects = () => {
       return byStatus && bySearch;
     })
     .sort((a, b) => (a.milestone_code || "").localeCompare(b.milestone_code || "", undefined, { numeric: true, sensitivity: 'base' }));
+
+  useEffect(() => {
+    if (!project?.id) {
+      setHeaderPlannedDigits("");
+      return;
+    }
+    setHeaderPlannedDigits(rupeesToDigitString(project.total_revenue_planned_rupees));
+  }, [project?.id, project?.total_revenue_planned_rupees]);
+
+  const projectMilestoneRevenueReadback = useMemo(() => {
+    if (!selectedId || !project) {
+      return { planned: 0, received: 0, remaining: 0, fromInput: false, realizedPct: null as number | null };
+    }
+    const topPlanned =
+      project.total_revenue_planned_rupees != null && Number.isFinite(Number(project.total_revenue_planned_rupees))
+        ? Math.max(0, Math.round(Number(project.total_revenue_planned_rupees)))
+        : 0;
+    const sumPlanned = projMilestones.reduce((acc, m) => {
+      const v = m.value_planned_rupees;
+      const n = v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
+      return acc + n;
+    }, 0);
+    const sumActual = projMilestones.reduce((acc, m) => {
+      const v = m.value_actual_rupees;
+      const n = v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
+      return acc + n;
+    }, 0);
+    /** Header wins when set; otherwise sum of milestone planned. Received = sum of milestone actual only. */
+    const totalPlanned = topPlanned > 0 ? topPlanned : sumPlanned;
+    const totalReceived = sumActual;
+    const fromInput = topPlanned > 0 || sumPlanned > 0 || sumActual > 0;
+    const remaining = Math.max(0, totalPlanned - totalReceived);
+    const realizedPct = totalPlanned > 0 ? (totalReceived / totalPlanned) * 100 : null;
+    return { planned: totalPlanned, received: totalReceived, remaining, fromInput, realizedPct };
+  }, [selectedId, project, projMilestones]);
+
+  /** Informational only — milestone planned cells are not auto-adjusted to match the header. */
+  const revenueAlignWarning = useMemo(() => {
+    if (!project || projMilestones.length === 0) return null;
+    const topP =
+      project.total_revenue_planned_rupees != null && Number.isFinite(Number(project.total_revenue_planned_rupees))
+        ? Math.max(0, Math.round(Number(project.total_revenue_planned_rupees)))
+        : 0;
+    const sumP = projMilestones.reduce((acc, m) => {
+      const v = m.value_planned_rupees;
+      const n = v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
+      return acc + n;
+    }, 0);
+    if (topP > 0 && Math.abs(sumP - topP) >= 1) {
+      return `Planned: milestones total ${formatRupeeCompact(sumP)}, header ${formatRupeeCompact(topP)}. Milestone cells are not auto-adjusted — edit the table or header to align if needed.`;
+    }
+    return null;
+  }, [project, projMilestones]);
 
   const filteredProjDocs = projDocs.filter((d) => d.project_id === selectedId)
     .filter((d) => documentFilter === "all" || d.category === documentFilter);
@@ -523,7 +590,7 @@ const Projects = () => {
     }
   }, [qc, milestoneHealth, selectedId, projMilestones]);
 
-  const updateProject = useCallback(async (field: string, value: string, oldVal: string | null) => {
+  const updateProject = useCallback(async (field: string, value: string | number | null, oldVal: string | number | null) => {
     if (!project) return;
     
     // Optimistic Update
@@ -1022,6 +1089,11 @@ const Projects = () => {
     }
     await writeAuditLog("milestones", milestoneId, "DELETE", ms, null);
     qc.invalidateQueries({ queryKey: ["milestones"] });
+    // Keep milestone health tracker in sync (it is derived from milestones)
+    const healthProjectId = ms.project_id || selectedId;
+    if (healthProjectId) {
+      qc.invalidateQueries({ queryKey: ["milestone_health", healthProjectId] });
+    }
     qc.invalidateQueries({ queryKey: ["audit_log"] });
     toast.success(`✓ Milestone deleted · ${new Date().toLocaleTimeString()}`);
     setConfirmDeleteMilestone(null);
@@ -1065,6 +1137,7 @@ const Projects = () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["milestones"] });
       qc.invalidateQueries({ queryKey: ["project_assignments"] });
+      qc.invalidateQueries({ queryKey: ["milestone_health", projectId] });
       qc.invalidateQueries({ queryKey: ["audit_log"] });
 
       if (remaining[0]?.id) {
@@ -1603,11 +1676,103 @@ const Projects = () => {
                   </button>
                 </div>
               </div>
+              {selectedId && (
+                <div className="space-y-4 border-b border-slate-200/80 bg-gradient-to-b from-slate-50/95 via-white to-indigo-50/20 px-6 py-5">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[11px] font-semibold text-slate-700">
+                      Project revenue — <span className="text-emerald-800">saved on this project and each milestone</span>
+                    </p>
+                    <p className="text-[10px] font-medium text-slate-500">
+                      {projectMilestoneRevenueReadback.fromInput
+                        ? "Planned uses the header when set, else sum of milestone planned. Received is the sum of milestone actual. Remaining and value % are derived from those."
+                        : "Enter amounts in the header or milestone rows to populate totals."}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <RevenueStatCard
+                      key={`revenue-planned-${selectedId}`}
+                      title="Total revenue planned"
+                      subtitle="This project (in view)"
+                      tone="planned"
+                      amountEdit={{
+                        value: headerPlannedDigits,
+                        onChange: setHeaderPlannedDigits,
+                        onBlur: () => {
+                          if (!project) return;
+                          const parsed = parseRevenueInRupees(headerPlannedDigits);
+                          const next = parsed > 0 ? Math.round(parsed) : null;
+                          const cur =
+                            project.total_revenue_planned_rupees != null &&
+                            Number.isFinite(Number(project.total_revenue_planned_rupees)) &&
+                            Number(project.total_revenue_planned_rupees) > 0
+                              ? Math.round(Number(project.total_revenue_planned_rupees))
+                              : null;
+                          if (next === cur) return;
+                          void updateProject("total_revenue_planned_rupees", next, cur);
+                        },
+                        onCancel: () => {
+                          if (!project) return;
+                          setHeaderPlannedDigits(rupeesToDigitString(project.total_revenue_planned_rupees));
+                        },
+                        placeholder: "80,00,000",
+                      }}
+                      footnote="Use the pencil to edit; save with the checkmark, Enter, or by leaving the field. Totals use this when set, else sum of milestone planned."
+                      icon={<Target size={18} className="text-indigo-600" aria-hidden />}
+                    />
+                    <RevenueStatCard
+                      title="Total revenue received"
+                      subtitle="Sum of milestone value actual (below)"
+                      tone="received"
+                      amountDisplay={formatRupeeCompact(projectMilestoneRevenueReadback.received)}
+                      footnote="Read-only here — edit each row’s “Milestone value actual” to change this total"
+                      icon={<Wallet size={18} className="text-emerald-600" aria-hidden />}
+                    />
+                    <RevenueStatCard
+                      title="Remaining revenue"
+                      subtitle="Planned minus received"
+                      amountDisplay={formatRupeeCompact(projectMilestoneRevenueReadback.remaining)}
+                      tone="remaining"
+                      footnote="Computed from totals above and milestone rows"
+                      icon={<Landmark size={18} className="text-amber-700" aria-hidden />}
+                    />
+                    <RevenueStatCard
+                      title="Value realized %"
+                      subtitle="Milestone actual ÷ milestone planned (portfolio)"
+                      tone="realized"
+                      amountDisplay={
+                        projectMilestoneRevenueReadback.realizedPct != null
+                          ? formatPercentFromNumber(projectMilestoneRevenueReadback.realizedPct)
+                          : "—"
+                      }
+                      footnote="Computed from totals in the first two cards when you have amounts entered"
+                      icon={<Percent size={18} className="text-violet-600" aria-hidden />}
+                    />
+                  </div>
+                  {revenueAlignWarning && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-[11px] font-semibold leading-snug text-amber-950">
+                      {revenueAlignWarning}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-gray-300 text-left text-gray-500 bg-white/30">
-                      {["ID", "Description", "Planned", "Actual/ETA", "Status", "Clients Signoff", "Invoice", "Remarks", "Delete"].map((h) => (
+                      {[
+                        "ID",
+                        "Description",
+                        "Planned",
+                        "Actual/ETA",
+                        "Status",
+                        "Clients Signoff",
+                        "Invoice",
+                        "Milestone value planned",
+                        "Milestone value actual",
+                        "Pending (planned − actual)",
+                        "Remarks",
+                        "Delete",
+                      ].map((h) => (
                         <th
                           key={h}
                           className={`px-4 py-3 font-semibold uppercase tracking-wider ${h === "Remarks" ? "min-w-[280px]" : "whitespace-nowrap"}`}
@@ -1619,9 +1784,26 @@ const Projects = () => {
                   </thead>
                   <tbody>
                     {filteredProjMilestones.length === 0 && (
-                      <tr><td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
+                      <tr><td colSpan={12} className="px-3 py-8 text-center text-muted-foreground">No milestones yet</td></tr>
                     )}
-                    {filteredProjMilestones.map((m) => (
+                    {filteredProjMilestones.map((m) => {
+                      const plannedR =
+                        m.value_planned_rupees != null && Number.isFinite(Number(m.value_planned_rupees))
+                          ? Math.max(0, Math.round(Number(m.value_planned_rupees)))
+                          : 0;
+                      const actualR =
+                        m.value_actual_rupees != null && Number.isFinite(Number(m.value_actual_rupees))
+                          ? Math.max(0, Math.round(Number(m.value_actual_rupees)))
+                          : 0;
+                      const pendingRupees = Math.max(0, plannedR - actualR);
+                      const pendingRatio = plannedR > 0 ? pendingRupees / plannedR : 0;
+                      const pendingPillClass =
+                        pendingRupees <= 0
+                          ? "border-emerald-400/80 bg-emerald-100 text-emerald-950 ring-1 ring-emerald-500/20"
+                          : pendingRatio > 0.5
+                            ? "border-rose-400/80 bg-rose-100 text-rose-950 ring-1 ring-rose-500/20"
+                            : "border-amber-400/80 bg-amber-100 text-amber-950 ring-1 ring-amber-500/20";
+                      return (
                       <tr key={m.id} className="border-b border-gray-300/50 last:border-0 hover:bg-gray-100/20 transition-colors">
                         <td className="px-4 py-3 font-medium text-white">
                           <InlineEdit value={m.milestone_code || ""} onSave={(v) => updateMilestone(m.id, "milestone_code", v, m.milestone_code)} savedKey={savedField === `${m.id}-milestone_code`} />
@@ -1732,6 +1914,40 @@ const Projects = () => {
                             )}
                           </div>
                         </td>
+                        <td className="px-4 py-3 min-w-[108px] align-top">
+                          {m.id ? (
+                            <MilestoneRupeeCell
+                              milestone={m}
+                              field="value_planned_rupees"
+                              placeholder="30,00,000"
+                              onSave={(milestoneId, field, rupees) => {
+                                const oldVal = field === "value_planned_rupees" ? m.value_planned_rupees : m.value_actual_rupees;
+                                void updateMilestone(milestoneId, field, rupees, oldVal);
+                              }}
+                            />
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 min-w-[108px] align-top">
+                          {m.id ? (
+                            <MilestoneRupeeCell
+                              milestone={m}
+                              field="value_actual_rupees"
+                              placeholder="28,00,000"
+                              onSave={(milestoneId, field, rupees) => {
+                                const oldVal = field === "value_planned_rupees" ? m.value_planned_rupees : m.value_actual_rupees;
+                                void updateMilestone(milestoneId, field, rupees, oldVal);
+                              }}
+                            />
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-3 min-w-[108px] align-top">
+                          <span
+                            className={`inline-flex min-h-[2.25rem] w-full max-w-[11rem] items-center justify-center rounded-full border px-2.5 py-1.5 text-xs font-extrabold tabular-nums tracking-tight shadow-sm ${pendingPillClass}`}
+                            title="Planned minus actual for this milestone"
+                          >
+                            {formatRupeeCompact(pendingRupees)}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 align-top min-w-[280px] max-w-[420px] whitespace-normal break-words">
                           <InlineEdit
                             value={m.remarks || ""}
@@ -1746,7 +1962,8 @@ const Projects = () => {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
