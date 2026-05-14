@@ -362,14 +362,16 @@ function nonNegIntRupee(v: number | null | undefined): number {
 }
 
 /**
- * Per-project planned/received — same rules as Projects Milestone Tracker:
- * planned = `total_revenue_planned_rupees` when set (> 0), else sum of milestone `value_planned_rupees`;
- * received = sum of milestone `value_actual_rupees`.
+ * Per-project planned/received — aligned with Projects Milestone Tracker:
+ * `planned` = `total_revenue_planned_rupees` when set (> 0), else sum of milestone `value_planned_rupees`;
+ * `received` = sum of milestone `value_actual_rupees`;
+ * `remaining` = max(0, sum of milestone planned − sum of milestone actual) so it matches row-level pending;
+ * `milestonePlannedSum` = sum of milestone planned (for portfolio % when rows exist).
  */
 export function projectRevenueFromApi(
   project: ProjectRevenueShape,
   milestones: MilestoneRevenueShape[]
-): { planned: number; received: number } {
+): { planned: number; received: number; remaining: number; milestonePlannedSum: number } {
   const ms = milestones.filter((m) => m.project_id === project.id);
   const sumPlanned = ms.reduce((acc, m) => acc + nonNegIntRupee(m.value_planned_rupees), 0);
   const sumActual = ms.reduce((acc, m) => acc + nonNegIntRupee(m.value_actual_rupees), 0);
@@ -379,7 +381,8 @@ export function projectRevenueFromApi(
     Number.isFinite(Number(project.total_revenue_planned_rupees)) &&
     Number(project.total_revenue_planned_rupees) > 0;
   const planned = headerSet ? top : sumPlanned;
-  return { planned, received: sumActual };
+  const remaining = Math.max(0, sumPlanned - sumActual);
+  return { planned, received: sumActual, remaining, milestonePlannedSum: sumPlanned };
 }
 
 /** Sum revenue for a list of projects (e.g. Overview filtered rows). */
@@ -389,13 +392,21 @@ export function aggregateRevenueForProjectList(
 ): { planned: number; received: number; remaining: number; realizedPct: number | null; hasAmounts: boolean } {
   let planned = 0;
   let received = 0;
+  let remaining = 0;
+  let milestonePlannedSum = 0;
   for (const p of projects) {
     const r = projectRevenueFromApi(p, milestones);
     planned += r.planned;
     received += r.received;
+    remaining += r.remaining;
+    milestonePlannedSum += r.milestonePlannedSum;
   }
-  const remaining = Math.max(0, planned - received);
-  const realizedPct = planned > 0 ? (received / planned) * 100 : null;
+  const realizedPct =
+    milestonePlannedSum > 0
+      ? (received / milestonePlannedSum) * 100
+      : planned > 0
+        ? (received / planned) * 100
+        : null;
   const hasAmounts = planned > 0 || received > 0;
   return { planned, received, remaining, realizedPct, hasAmounts };
 }

@@ -344,12 +344,17 @@ const Projects = () => {
       const n = v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0;
       return acc + n;
     }, 0);
-    /** Header wins when set; otherwise sum of milestone planned. Received = sum of milestone actual only. */
+    /** Header card shows portfolio target when set; received/remaining/% below use milestone row sums only. */
     const totalPlanned = topPlanned > 0 ? topPlanned : sumPlanned;
     const totalReceived = sumActual;
     const fromInput = topPlanned > 0 || sumPlanned > 0 || sumActual > 0;
-    const remaining = Math.max(0, totalPlanned - totalReceived);
-    const realizedPct = totalPlanned > 0 ? (totalReceived / totalPlanned) * 100 : null;
+    const remaining = Math.max(0, sumPlanned - totalReceived);
+    const realizedPct =
+      sumPlanned > 0
+        ? (totalReceived / sumPlanned) * 100
+        : topPlanned > 0
+          ? (totalReceived / topPlanned) * 100
+          : null;
     return { planned: totalPlanned, received: totalReceived, remaining, fromInput, realizedPct };
   }, [selectedId, project, projMilestones]);
 
@@ -1684,7 +1689,7 @@ const Projects = () => {
                     </p>
                     <p className="text-[10px] font-medium text-slate-500">
                       {projectMilestoneRevenueReadback.fromInput
-                        ? "Planned uses the header when set, else sum of milestone planned. Received is the sum of milestone actual. Remaining and value % are derived from those."
+                        ? "The first card is the saved header target when set. Received, remaining, and value % use sums from milestone rows (remaining matches pending in the table)."
                         : "Enter amounts in the header or milestone rows to populate totals."}
                     </p>
                   </div>
@@ -1729,22 +1734,22 @@ const Projects = () => {
                     />
                     <RevenueStatCard
                       title="Remaining revenue"
-                      subtitle="Planned minus received"
+                      subtitle="Milestone planned minus milestone received (rows)"
                       amountDisplay={formatRupeeCompact(projectMilestoneRevenueReadback.remaining)}
                       tone="remaining"
-                      footnote="Computed from totals above and milestone rows"
+                      footnote="Same as the sum of the Pending column; not mixed with the header planned total"
                       icon={<Landmark size={18} className="text-amber-700" aria-hidden />}
                     />
                     <RevenueStatCard
                       title="Value realized %"
-                      subtitle="Milestone actual ÷ milestone planned (portfolio)"
+                      subtitle="Milestone actual ÷ milestone planned (rows)"
                       tone="realized"
                       amountDisplay={
                         projectMilestoneRevenueReadback.realizedPct != null
                           ? formatPercentFromNumber(projectMilestoneRevenueReadback.realizedPct)
                           : "—"
                       }
-                      footnote="Computed from totals in the first two cards when you have amounts entered"
+                      footnote="Uses milestone row sums; when no milestone planned is entered, uses the header planned if set"
                       icon={<Percent size={18} className="text-violet-600" aria-hidden />}
                     />
                   </div>
