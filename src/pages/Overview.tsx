@@ -144,7 +144,7 @@ const Overview = () => {
   );
 
   const realizedFootnote = revenueTotals.hasAmounts
-    ? "Portfolio actualized ÷ planned for projects in the current filter"
+    ? "Sum of milestone actual ÷ sum of milestone planned in the current filter (uses header planned only when no milestone planned totals exist)"
     : "Enter planned totals and milestone values on each project to populate revenue.";
 
   const totalProjects = (projects || []).length;
@@ -378,7 +378,7 @@ const Overview = () => {
               <p className="text-[11px] font-medium text-slate-500 mt-0.5">{revenueScopeLabel}</p>
             </div>
             <p className="text-[10px] font-semibold text-slate-600 rounded-md bg-slate-100/90 px-2 py-1 w-fit border border-slate-200/80 max-w-md leading-snug">
-              Totals use saved data: project <span className="font-mono">total_revenue_planned_rupees</span> (when set) and milestone sums — same scope as the table below (respects Active / On Track / etc.).
+              Totals use saved data: project <span className="font-mono">total_revenue_planned_rupees</span> (when set) for the planned card; received, remaining, and value % aggregate milestone row sums — same filter scope as the table below.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -400,10 +400,14 @@ const Overview = () => {
             />
             <RevenueStatCard
               title="Remaining revenue"
-              subtitle="Planned minus received"
+              subtitle="Sum of (milestone planned − milestone actual) per project"
               amountDisplay={formatRupeeCompact(revenueTotals.remaining)}
               tone="remaining"
-              footnote={revenueTotals.remaining === 0 ? "Fully received vs planned in view" : undefined}
+              footnote={
+                revenueTotals.remaining === 0
+                  ? "No pending milestone value in view"
+                  : "Matches pending-style totals on each project’s milestone rows"
+              }
               icon={<Landmark size={18} className="text-amber-700" aria-hidden />}
             />
             <RevenueStatCard
@@ -464,7 +468,11 @@ const Overview = () => {
                     const completedInvoices = pMs.filter((m) => m.invoice_status === "Done").length;
                     const rowRev = projectRevenueFromApi(p, milestones || []);
                     const realizedPctRow =
-                      rowRev.planned > 0 ? (rowRev.received / rowRev.planned) * 100 : null;
+                      rowRev.milestonePlannedSum > 0
+                        ? (rowRev.received / rowRev.milestonePlannedSum) * 100
+                        : rowRev.planned > 0
+                          ? (rowRev.received / rowRev.planned) * 100
+                          : null;
                     const cell = "px-6 py-5 text-gray-700 align-middle";
                     return (
                       <tr
